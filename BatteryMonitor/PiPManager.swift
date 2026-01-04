@@ -13,14 +13,16 @@ final class PiPManager: NSObject, ObservableObject {
     private var playerLayer: AVPlayerLayer?
     private var controller: AVPictureInPictureController?
 
-    // Backing video URL (wide, black) written to temp once.
     private var videoURL: URL?
 
     // MARK: - Public API
 
     func startPiP() {
-        // Already active / already have a controller
         if controller?.isPictureInPictureActive == true { return }
+
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            return
+        }
 
         do {
             let url = try prepareBlankVideoIfNeeded()
@@ -37,15 +39,16 @@ final class PiPManager: NSObject, ObservableObject {
             self.player = player
             self.playerLayer = layer
 
-            guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            // IMPORTANT: this initializer can yield nil -> unwrap
+            guard let pip = AVPictureInPictureController(playerLayer: layer) else {
+                // PiP not available in current environment
+                cleanup()
                 return
             }
 
-            let pip = AVPictureInPictureController(playerLayer: layer)
             pip.delegate = self
             self.controller = pip
 
-            // Loop the blank video
             NotificationCenter.default.addObserver(
                 self,
                 selector: #selector(loopVideo),
@@ -55,8 +58,8 @@ final class PiPManager: NSObject, ObservableObject {
 
             player.play()
             pip.startPictureInPicture()
+
         } catch {
-            // If something fails, ensure we clean up.
             stopPiP()
         }
     }
@@ -84,11 +87,9 @@ final class PiPManager: NSObject, ObservableObject {
         isActive = false
     }
 
-    /// Creates a wide, black mp4 in the temp directory if not already present.
     private func prepareBlankVideoIfNeeded() throws -> URL {
         let tmp = FileManager.default.temporaryDirectory
         let url = tmp.appendingPathComponent("pip_blank_2400x1000.mp4")
-
         if FileManager.default.fileExists(atPath: url.path) {
             return url
         }
@@ -99,13 +100,10 @@ final class PiPManager: NSObject, ObservableObject {
             height: 1000,
             seconds: 10
         )
-
         return url
     }
 
-    /// Renders a solid-black H.264 mp4 with the given dimensions and duration.
     private func renderBlankVideo(outputURL: URL, width: Int, height: Int, seconds: Int) throws {
-        // Remove old file if it exists
         try? FileManager.default.removeItem(at: outputURL)
 
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
@@ -144,7 +142,6 @@ final class PiPManager: NSObject, ObservableObject {
         let fps: Int32 = 30
         let totalFrames = seconds * Int(fps)
 
-        // Make a single black pixel buffer to reuse.
         func makeBlackBuffer() -> CVPixelBuffer? {
             var pb: CVPixelBuffer?
             let status = CVPixelBufferCreate(
@@ -181,14 +178,10 @@ final class PiPManager: NSObject, ObservableObject {
 
             if frame >= totalFrames {
                 input.markAsFinished()
-                writer.finishWriting {
-                    // nothing else needed
-                }
+                writer.finishWriting { }
             }
         }
 
-        // Wait until done (simple blocking wait for file to exist and be finalized).
-        // NOTE: This runs only when user turns on PiP, so it’s acceptable here.
         while writer.status == .writing {
             Thread.sleep(forTimeInterval: 0.05)
         }
@@ -201,22 +194,16 @@ final class PiPManager: NSObject, ObservableObject {
 
 // MARK: - AVPictureInPictureControllerDelegate
 
-extension PiPManager: @preconcurrency AVPictureInPictureControllerDelegate {
-    nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        Task { @MainActor in
-            self.isActive = true
-        }
+extension PiPManager: AVPictureInPictureControllerDelegate {
+    func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        isActive = true
     }
 
-    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        Task { @MainActor in
-            self.isActive = false
-        }
+    func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        isActive = false
     }
 
-    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        Task { @MainActor in
-            self.cleanup()
-        }
+    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        cleanup()
     }
 }
