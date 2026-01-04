@@ -1,0 +1,260 @@
+// !$*UTF8*$!
+{
+  archiveVersion = 1;
+  classes = {
+  };
+  objectVersion = 56;
+  objects = {
+
+/* Begin PBXBuildFile section */
+    111111111111111111111111 /* BatteryMonitorApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222222 /* BatteryMonitorApp.swift */; };
+    111111111111111111111112 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222223 /* ContentView.swift */; };
+    111111111111111111111113 /* DeviceMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222224 /* DeviceMonitor.swift */; };
+    111111111111111111111114 /* PiPManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222225 /* PiPManager.swift */; };
+    111111111111111111111115 /* PiPOverlayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222226 /* PiPOverlayViewController.swift */; };
+    111111111111111111111116 /* PiPHostWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222227 /* PiPHostWindow.swift */; };
+    111111111111111111111117 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222228 /* Assets.xcassets */; };
+    111111111111111111111118 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222229 /* Info.plist */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+    222222222222222222222222 /* BatteryMonitorApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryMonitorApp.swift; sourceTree = "<group>"; };
+    222222222222222222222223 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+    222222222222222222222224 /* DeviceMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceMonitor.swift; sourceTree = "<group>"; };
+    222222222222222222222225 /* PiPManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPManager.swift; sourceTree = "<group>"; };
+    222222222222222222222226 /* PiPOverlayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPOverlayViewController.swift; sourceTree = "<group>"; };
+    222222222222222222222227 /* PiPHostWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPHostWindow.swift; sourceTree = "<group>"; };
+    222222222222222222222228 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+    222222222222222222222229 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+    222222222222222222222230 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+    333333333333333333333333 /* Frameworks */ = {
+      isa = PBXFrameworksBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+    444444444444444444444444 = {
+      isa = PBXGroup;
+      children = (
+        555555555555555555555555 /* BatteryMonitor */,
+        666666666666666666666666 /* Products */,
+      );
+      sourceTree = "<group>";
+    };
+    555555555555555555555555 /* BatteryMonitor */ = {
+      isa = PBXGroup;
+      children = (
+        222222222222222222222222,
+        222222222222222222222223,
+        222222222222222222222224,
+        222222222222222222222225,
+        222222222222222222222226,
+        222222222222222222222227,
+        222222222222222222222228,
+        222222222222222222222229,
+      );
+      path = BatteryMonitor;
+      sourceTree = "<group>";
+    };
+    666666666666666666666666 /* Products */ = {
+      isa = PBXGroup;
+      children = (
+        222222222222222222222230,
+      );
+      name = Products;
+      sourceTree = "<group>";
+    };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+    A1A1A1A1A1A1A1A1A1A1A1A1 /* BatteryMonitor */ = {
+      isa = PBXNativeTarget;
+      buildConfigurationList = B1B1B1B1B1B1B1B1B1B1B1B1 /* Build configuration list for PBXNativeTarget "BatteryMonitor" */;
+      buildPhases = (
+        C1C1C1C1C1C1C1C1C1C1C1C1 /* Sources */,
+        C2C2C2C2C2C2C2C2C2C2C2C2 /* Resources */,
+        333333333333333333333333 /* Frameworks */,
+      );
+      buildRules = (
+      );
+      dependencies = (
+      );
+      name = BatteryMonitor;
+      productName = BatteryMonitor;
+      productReference = 222222222222222222222230 /* BatteryMonitor.app */;
+      productType = "com.apple.product-type.application";
+    };
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+    777777777777777777777777 /* Project object */ = {
+      isa = PBXProject;
+      attributes = {
+        BuildIndependentTargetsInParallel = 1;
+        LastUpgradeCheck = 1600;
+        TargetAttributes = {
+          A1A1A1A1A1A1A1A1A1A1A1A1 = {
+            CreatedOnToolsVersion = 16.0;
+          };
+        };
+      };
+      buildConfigurationList = 888888888888888888888888 /* Build configuration list for PBXProject "BatteryMonitor" */;
+      compatibilityVersion = "Xcode 14.0";
+      developmentRegion = en;
+      hasScannedForEncodings = 0;
+      knownRegions = (
+        en,
+        Base,
+      );
+      mainGroup = 444444444444444444444444;
+      productRefGroup = 666666666666666666666666 /* Products */;
+      projectDirPath = "";
+      projectRoot = "";
+      targets = (
+        A1A1A1A1A1A1A1A1A1A1A1A1 /* BatteryMonitor */,
+      );
+    };
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+    C2C2C2C2C2C2C2C2C2C2C2C2 /* Resources */ = {
+      isa = PBXResourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        111111111111111111111117 /* Assets.xcassets in Resources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+    C1C1C1C1C1C1C1C1C1C1C1C1 /* Sources */ = {
+      isa = PBXSourcesBuildPhase;
+      buildActionMask = 2147483647;
+      files = (
+        111111111111111111111111 /* BatteryMonitorApp.swift in Sources */,
+        111111111111111111111112 /* ContentView.swift in Sources */,
+        111111111111111111111113 /* DeviceMonitor.swift in Sources */,
+        111111111111111111111114 /* PiPManager.swift in Sources */,
+        111111111111111111111115 /* PiPOverlayViewController.swift in Sources */,
+        111111111111111111111116 /* PiPHostWindow.swift in Sources */,
+      );
+      runOnlyForDeploymentPostprocessing = 0;
+    };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+    D1D1D1D1D1D1D1D1D1D1D1D1 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        CLANG_ENABLE_MODULES = YES;
+        CURRENT_PROJECT_VERSION = 1;
+        DEVELOPMENT_LANGUAGE = en;
+        ENABLE_PREVIEWS = YES;
+        GENERATE_INFOPLIST_FILE = NO;
+        INFOPLIST_FILE = BatteryMonitor/Info.plist;
+        IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+        );
+        MARKETING_VERSION = 1.0;
+        PRODUCT_BUNDLE_IDENTIFIER = com.example.BatteryMonitor;
+        PRODUCT_NAME = BatteryMonitor;
+        SDKROOT = iphoneos;
+        SWIFT_VERSION = 5.0;
+        TARGETED_DEVICE_FAMILY = "1";
+        UIBackgroundModes = (
+          audio,
+          picture-in-picture,
+        );
+      };
+      name = Debug;
+    };
+    D2D2D2D2D2D2D2D2D2D2D2D2 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+        CLANG_ENABLE_MODULES = YES;
+        CURRENT_PROJECT_VERSION = 1;
+        DEVELOPMENT_LANGUAGE = en;
+        GENERATE_INFOPLIST_FILE = NO;
+        INFOPLIST_FILE = BatteryMonitor/Info.plist;
+        IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+        LD_RUNPATH_SEARCH_PATHS = (
+          "$(inherited)",
+          "@executable_path/Frameworks",
+        );
+        MARKETING_VERSION = 1.0;
+        PRODUCT_BUNDLE_IDENTIFIER = com.example.BatteryMonitor;
+        PRODUCT_NAME = BatteryMonitor;
+        SDKROOT = iphoneos;
+        SWIFT_VERSION = 5.0;
+        SWIFT_OPTIMIZATION_LEVEL = "-O";
+        TARGETED_DEVICE_FAMILY = "1";
+        UIBackgroundModes = (
+          audio,
+          picture-in-picture,
+        );
+      };
+      name = Release;
+    };
+
+    E1E1E1E1E1E1E1E1E1E1E1E1 /* Debug */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+        CLANG_ENABLE_MODULES = YES;
+        CODE_SIGN_STYLE = Automatic;
+        DEVELOPMENT_TEAM = "";
+        ENABLE_BITCODE = NO;
+        PRODUCT_NAME = BatteryMonitor;
+      };
+      name = Debug;
+    };
+    E2E2E2E2E2E2E2E2E2E2E2E2 /* Release */ = {
+      isa = XCBuildConfiguration;
+      buildSettings = {
+        ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES = YES;
+        CLANG_ENABLE_MODULES = YES;
+        CODE_SIGN_STYLE = Automatic;
+        DEVELOPMENT_TEAM = "";
+        ENABLE_BITCODE = NO;
+        PRODUCT_NAME = BatteryMonitor;
+      };
+      name = Release;
+    };
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+    888888888888888888888888 /* Build configuration list for PBXProject "BatteryMonitor" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        D1D1D1D1D1D1D1D1D1D1D1D1 /* Debug */,
+        D2D2D2D2D2D2D2D2D2D2D2D2 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+    B1B1B1B1B1B1B1B1B1B1B1B1 /* Build configuration list for PBXNativeTarget "BatteryMonitor" */ = {
+      isa = XCConfigurationList;
+      buildConfigurations = (
+        E1E1E1E1E1E1E1E1E1E1E1E1 /* Debug */,
+        E2E2E2E2E2E2E2E2E2E2E2E2 /* Release */,
+      );
+      defaultConfigurationIsVisible = 0;
+      defaultConfigurationName = Release;
+    };
+/* End XCConfigurationList section */
+
+  };
+  rootObject = 777777777777777777777777 /* Project object */;
+}
