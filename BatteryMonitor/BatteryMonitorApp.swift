@@ -6,10 +6,7 @@ struct BatteryMonitorApp: App {
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
-                .environmentObject(monitor)
-                .onAppear { monitor.start() }
-                .onDisappear { monitor.stop() }
+            ContentView(monitor: monitor)
         }
     }
 }
