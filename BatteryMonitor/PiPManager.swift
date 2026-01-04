@@ -1,18 +1,20 @@
 import Foundation
-import AVFoundation
+@preconcurrency import AVFoundation
 import AVKit
 import UIKit
 
-/// Minimal PiP controller that:
-/// - Starts PiP using a wide black video
-/// - Accepts overlay text via updateOverlay(...)
-/// - Broadcasts overlay text via NotificationCenter so any overlay UI can subscribe
-final class PiPManager: NSObject, ObservableObject {
+/// PiP manager used by ContentView/DeviceMonitor.
+/// Exposes:
+/// - isPiPActive (used by ContentView)
+/// - startPiP(rateLine:etaLine:) (used by ContentView)
+/// - updateOverlay(rateLine:etaLine:) (used by DeviceMonitor)
+final class PiPManager: NSObject, ObservableObject, @unchecked Sendable {
     static let shared = PiPManager()
 
-    @Published private(set) var isActive: Bool = false
+    /// ContentView.swift expects this name.
+    @Published private(set) var isPiPActive: Bool = false
 
-    // Notification for overlay updates (string lines)
+    /// Notification for overlay updates (two lines).
     static let overlayDidChangeNotification = Notification.Name("PiPOverlayDidChange")
 
     private var player: AVPlayer?
@@ -24,9 +26,8 @@ final class PiPManager: NSObject, ObservableObject {
     private var lastRateLine: String = ""
     private var lastEtaLine: String = ""
 
-    // MARK: - Public API (matches your existing callers)
+    // MARK: - Public API (matches existing callers)
 
-    /// Matches ContentView.swift call site.
     func startPiP(rateLine: String, etaLine: String) {
         lastRateLine = rateLine
         lastEtaLine = etaLine
@@ -34,7 +35,6 @@ final class PiPManager: NSObject, ObservableObject {
         updateOverlay(rateLine: rateLine, etaLine: etaLine)
     }
 
-    /// Starts PiP (no overlay args). Safe to call repeatedly.
     func startPiP() {
         if controller?.isPictureInPictureActive == true { return }
         guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
@@ -54,7 +54,7 @@ final class PiPManager: NSObject, ObservableObject {
             self.player = player
             self.playerLayer = layer
 
-            // IMPORTANT: can be nil -> unwrap
+            // Can be nil -> unwrap
             guard let pip = AVPictureInPictureController(playerLayer: layer) else {
                 cleanup()
                 return
@@ -73,7 +73,7 @@ final class PiPManager: NSObject, ObservableObject {
             player.play()
             pip.startPictureInPicture()
 
-            // push last known overlay (if any)
+            // push last overlay if present
             if !lastRateLine.isEmpty || !lastEtaLine.isEmpty {
                 updateOverlay(rateLine: lastRateLine, etaLine: lastEtaLine)
             }
@@ -87,7 +87,6 @@ final class PiPManager: NSObject, ObservableObject {
         cleanup()
     }
 
-    /// Matches DeviceMonitor.swift call site.
     func updateOverlay(rateLine: String, etaLine: String) {
         lastRateLine = rateLine
         lastEtaLine = etaLine
@@ -109,6 +108,16 @@ final class PiPManager: NSObject, ObservableObject {
         player?.play()
     }
 
+    private func setPiPActiveOnMain(_ active: Bool) {
+        if Thread.isMainThread {
+            self.isPiPActive = active
+        } else {
+            DispatchQueue.main.async { [weak self] in
+                self?.isPiPActive = active
+            }
+        }
+    }
+
     private func cleanup() {
         NotificationCenter.default.removeObserver(self)
 
@@ -117,7 +126,7 @@ final class PiPManager: NSObject, ObservableObject {
         player?.pause()
         player = nil
 
-        isActive = false
+        setPiPActiveOnMain(false)
     }
 
     // Creates a wide, black mp4 in temp if missing (gives “long not tall” PiP)
@@ -228,22 +237,17 @@ final class PiPManager: NSObject, ObservableObject {
 
 // MARK: - AVPictureInPictureControllerDelegate
 extension PiPManager: AVPictureInPictureControllerDelegate {
-    // These are warnings under Swift 5 mode, but future-proofed to avoid Swift 6 isolation breakage.
     nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        DispatchQueue.main.async { [weak self] in
-            self?.isActive = true
-        }
+        PiPManager.shared.setPiPActiveOnMain(true)
     }
 
     nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        DispatchQueue.main.async { [weak self] in
-            self?.isActive = false
-        }
+        PiPManager.shared.setPiPActiveOnMain(false)
     }
 
     nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        DispatchQueue.main.async { [weak self] in
-            self?.cleanup()
+        DispatchQueue.main.async {
+            PiPManager.shared.cleanup()
         }
     }
 }
