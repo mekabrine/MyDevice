@@ -9,10 +9,18 @@ struct ContentView: View {
                 Section("Background monitoring") {
                     Toggle("Enable", isOn: $monitor.backgroundMonitorEnabled)
                         .onChange(of: monitor.backgroundMonitorEnabled) { enabled in
-                            setBackgroundMonitoring(enabled)
+                            if enabled {
+                                monitor.startBackgroundMonitoring()
+                            } else {
+                                monitor.stopBackgroundMonitoring()
+                            }
                         }
                         .onAppear {
-                            setBackgroundMonitoring(monitor.backgroundMonitorEnabled)
+                            if monitor.backgroundMonitorEnabled {
+                                monitor.startBackgroundMonitoring()
+                            } else {
+                                monitor.stopBackgroundMonitoring()
+                            }
                         }
 
                     Button("Refresh now") {
@@ -21,9 +29,6 @@ struct ContentView: View {
                 }
 
                 Section("Picture in Picture") {
-                    Text(monitor.pip.isActive ? "Active (PiP running)" : "Inactive")
-                        .foregroundColor(monitor.pip.isActive ? .blue : .secondary)
-
                     HStack {
                         Button("Start PiP") { monitor.pip.startPiP() }
                         Button("Stop PiP") { monitor.pip.stopPiP() }
@@ -31,14 +36,6 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("BatteryMonitor")
-        }
-    }
-
-    private func setBackgroundMonitoring(_ enabled: Bool) {
-        if enabled {
-            monitor.startBackgroundMonitoring()
-        } else {
-            monitor.stopBackgroundMonitoring()
         }
     }
 }
