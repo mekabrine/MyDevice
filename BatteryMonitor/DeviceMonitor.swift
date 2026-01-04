@@ -3,80 +3,40 @@ import UIKit
 
 @MainActor
 final class DeviceMonitor: ObservableObject {
-
-    // MARK: Published state
-    @Published var batteryLevel: Double = 0.0          // 0.0 ... 1.0
-    @Published var batteryState: UIDevice.BatteryState = .unknown
+    @Published var batteryLevel: Float = 0
     @Published var isLowPowerMode: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
     @Published var thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
-    @Published var backgroundMonitorEnabled: Bool = false
-    @Published var lastUpdated: Date = Date()
+    @Published var isMonitoring: Bool = false
 
-    // MARK: Helpers
     let pip = PiPManager()
 
-    private var backgroundTimer: Timer?
-    private var observers: [NSObjectProtocol] = []
+    private var timer: Timer?
 
     init() {
         UIDevice.current.isBatteryMonitoringEnabled = true
-        wireNotifications()
         refreshNow()
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(powerModeChanged),
+            name: .NSProcessInfoPowerStateDidChange,
+            object: nil
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(thermalStateChanged),
+            name: ProcessInfo.thermalStateDidChangeNotification,
+            object: nil
+        )
     }
 
     deinit {
-        for o in observers { NotificationCenter.default.removeObserver(o) }
-        observers.removeAll()
-        backgroundTimer?.invalidate()
-        backgroundTimer = nil
+        NotificationCenter.default.removeObserver(self)
+        timer?.invalidate()
     }
 
-    // MARK: Public API used by ContentView
-    func refreshNow() {
-        UIDevice.current.isBatteryMonitoringEnabled = true
-
-        let level = UIDevice.current.batteryLevel
-        batteryLevel = level < 0 ? 0.0 : Double(level)
-
-        batteryState = UIDevice.current.batteryState
-        isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-        thermalState = ProcessInfo.processInfo.thermalState
-        lastUpdated = Date()
-    }
-
-    func startBackgroundMonitoring() {
-        guard backgroundTimer == nil else { return }
-        backgroundMonitorEnabled = true
-
-        UIDevice.current.isBatteryMonitoringEnabled = true
-
-        let t = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshNow()
-            }
-        }
-        RunLoop.main.add(t, forMode: .common)
-        backgroundTimer = t
-    }
-
-    func stopBackgroundMonitoring() {
-        backgroundMonitorEnabled = false
-        backgroundTimer?.invalidate()
-        backgroundTimer = nil
-    }
-
-    // MARK: Text formatting
-    var batteryStateText: String {
-        switch batteryState {
-        case .unknown: return "Unknown"
-        case .unplugged: return "Unplugged"
-        case .charging: return "Charging"
-        case .full: return "Full"
-        @unknown default: return "Unknown"
-        }
-    }
-
-    var thermalStateText: String {
+    var thermalStateDescription: String {
         switch thermalState {
         case .nominal: return "Nominal"
         case .fair: return "Fair"
@@ -86,36 +46,36 @@ final class DeviceMonitor: ObservableObject {
         }
     }
 
-    var lastUpdatedText: String {
-        let f = DateFormatter()
-        f.dateStyle = .none
-        f.timeStyle = .medium
-        return f.string(from: lastUpdated)
+    func startBackgroundMonitoring() {
+        guard !isMonitoring else { return }
+        isMonitoring = true
+
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.refreshNow()
+            }
+        }
+        RunLoop.main.add(timer!, forMode: .common)
     }
 
-    // MARK: Notifications
-    private func wireNotifications() {
-        let nc = NotificationCenter.default
+    func stopBackgroundMonitoring() {
+        isMonitoring = false
+        timer?.invalidate()
+        timer = nil
+    }
 
-        observers.append(
-            nc.addObserver(forName: UIDevice.batteryLevelDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.refreshNow()
-            }
-        )
-        observers.append(
-            nc.addObserver(forName: UIDevice.batteryStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.refreshNow()
-            }
-        )
-        observers.append(
-            nc.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
-                self?.refreshNow()
-            }
-        )
-        observers.append(
-            nc.addObserver(forName: ProcessInfo.thermalStateDidChangeNotification, object: nil, queue: .main) { [weak self] _ in
-                self?.refreshNow()
-            }
-        )
+    func refreshNow() {
+        batteryLevel = max(0, UIDevice.current.batteryLevel)
+        isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        thermalState = ProcessInfo.processInfo.thermalState
+    }
+
+    @objc private func powerModeChanged() {
+        refreshNow()
+    }
+
+    @objc private func thermalStateChanged() {
+        refreshNow()
     }
 }
