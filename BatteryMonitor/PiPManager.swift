@@ -1,253 +1,91 @@
 import Foundation
-@preconcurrency import AVFoundation
 import AVKit
-import UIKit
+import AVFoundation
 
-/// PiP manager used by ContentView/DeviceMonitor.
-/// Exposes:
-/// - isPiPActive (used by ContentView)
-/// - startPiP(rateLine:etaLine:) (used by ContentView)
-/// - updateOverlay(rateLine:etaLine:) (used by DeviceMonitor)
-final class PiPManager: NSObject, ObservableObject, @unchecked Sendable {
-    static let shared = PiPManager()
+@MainActor
+final class PiPManager: NSObject, ObservableObject {
+    @Published private(set) var isActive: Bool = false
+    @Published private(set) var lastMessage: String?
 
-    /// ContentView.swift expects this name.
-    @Published private(set) var isPiPActive: Bool = false
-
-    /// Notification for overlay updates (two lines).
-    static let overlayDidChangeNotification = Notification.Name("PiPOverlayDidChange")
-
+    private var pipController: AVPictureInPictureController?
     private var player: AVPlayer?
     private var playerLayer: AVPlayerLayer?
-    private var controller: AVPictureInPictureController?
 
-    private var videoURL: URL?
-
-    private var lastRateLine: String = ""
-    private var lastEtaLine: String = ""
-
-    // MARK: - Public API (matches existing callers)
-
-    func startPiP(rateLine: String, etaLine: String) {
-        lastRateLine = rateLine
-        lastEtaLine = etaLine
-        startPiP()
-        updateOverlay(rateLine: rateLine, etaLine: etaLine)
+    var isSupported: Bool {
+        AVPictureInPictureController.isPictureInPictureSupported()
     }
 
-    func startPiP() {
-        if controller?.isPictureInPictureActive == true { return }
-        guard AVPictureInPictureController.isPictureInPictureSupported() else { return }
+    override init() {
+        super.init()
+        setup()
+    }
 
-        do {
-            let url = try prepareBlankVideoIfNeeded()
-            videoURL = url
+    private func setup() {
+        guard isSupported else {
+            lastMessage = "PiP is not supported."
+            return
+        }
 
-            let item = AVPlayerItem(url: url)
-            let player = AVPlayer(playerItem: item)
-            player.isMuted = true
-            player.actionAtItemEnd = .none
+        // If you add a bundled video named "pip.mp4", PiP can actually start.
+        // Without it, the code still compiles and runs, but start() will show a message.
+        if let url = Bundle.main.url(forResource: "pip", withExtension: "mp4") {
+            let p = AVPlayer(url: url)
+            self.player = p
 
-            let layer = AVPlayerLayer(player: player)
+            let layer = AVPlayerLayer(player: p)
             layer.videoGravity = .resizeAspect
-
-            self.player = player
             self.playerLayer = layer
 
-            // Can be nil -> unwrap
-            guard let pip = AVPictureInPictureController(playerLayer: layer) else {
-                cleanup()
-                return
-            }
+            let controller = AVPictureInPictureController(playerLayer: layer)
+            controller.delegate = self
+            self.pipController = controller
 
-            pip.delegate = self
-            self.controller = pip
-
-            NotificationCenter.default.addObserver(
-                self,
-                selector: #selector(loopVideo),
-                name: .AVPlayerItemDidPlayToEndTime,
-                object: item
-            )
-
-            player.play()
-            pip.startPictureInPicture()
-
-            // push last overlay if present
-            if !lastRateLine.isEmpty || !lastEtaLine.isEmpty {
-                updateOverlay(rateLine: lastRateLine, etaLine: lastEtaLine)
-            }
-        } catch {
-            stopPiP()
-        }
-    }
-
-    func stopPiP() {
-        controller?.stopPictureInPicture()
-        cleanup()
-    }
-
-    func updateOverlay(rateLine: String, etaLine: String) {
-        lastRateLine = rateLine
-        lastEtaLine = etaLine
-
-        NotificationCenter.default.post(
-            name: Self.overlayDidChangeNotification,
-            object: self,
-            userInfo: [
-                "rateLine": rateLine,
-                "etaLine": etaLine
-            ]
-        )
-    }
-
-    // MARK: - Internals
-
-    @objc private func loopVideo() {
-        player?.seek(to: .zero)
-        player?.play()
-    }
-
-    private func setPiPActiveOnMain(_ active: Bool) {
-        if Thread.isMainThread {
-            self.isPiPActive = active
+            lastMessage = "Ready. (Using bundled pip.mp4)"
         } else {
-            DispatchQueue.main.async { [weak self] in
-                self?.isPiPActive = active
-            }
+            lastMessage = "Add a bundled video named pip.mp4 to enable real PiP."
         }
     }
 
-    private func cleanup() {
-        NotificationCenter.default.removeObserver(self)
+    func start() {
+        guard isSupported else { return }
+        guard let controller = pipController, let player else {
+            lastMessage = "PiP not ready. (Missing pip.mp4)"
+            return
+        }
 
-        controller = nil
-        playerLayer = nil
+        player.play()
+        controller.startPictureInPicture()
+    }
+
+    func stop() {
+        pipController?.stopPictureInPicture()
         player?.pause()
-        player = nil
-
-        setPiPActiveOnMain(false)
-    }
-
-    // Creates a wide, black mp4 in temp if missing (gives “long not tall” PiP)
-    private func prepareBlankVideoIfNeeded() throws -> URL {
-        let tmp = FileManager.default.temporaryDirectory
-        let url = tmp.appendingPathComponent("pip_blank_2400x1000.mp4")
-        if FileManager.default.fileExists(atPath: url.path) {
-            return url
-        }
-
-        try renderBlankVideo(
-            outputURL: url,
-            width: 2400,
-            height: 1000,
-            seconds: 10
-        )
-        return url
-    }
-
-    private func renderBlankVideo(outputURL: URL, width: Int, height: Int, seconds: Int) throws {
-        try? FileManager.default.removeItem(at: outputURL)
-
-        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mp4)
-
-        let outputSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.h264,
-            AVVideoWidthKey: width,
-            AVVideoHeightKey: height
-        ]
-
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: outputSettings)
-        input.expectsMediaDataInRealTime = false
-
-        let sourceAttributes: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
-            kCVPixelBufferWidthKey as String: width,
-            kCVPixelBufferHeightKey as String: height
-        ]
-
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: input,
-            sourcePixelBufferAttributes: sourceAttributes
-        )
-
-        guard writer.canAdd(input) else {
-            throw NSError(domain: "PiPManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot add writer input"])
-        }
-        writer.add(input)
-
-        if !writer.startWriting() {
-            throw writer.error ?? NSError(domain: "PiPManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "startWriting failed"])
-        }
-
-        writer.startSession(atSourceTime: .zero)
-
-        let fps: Int32 = 30
-        let totalFrames = seconds * Int(fps)
-
-        func makeBlackBuffer() -> CVPixelBuffer? {
-            var pb: CVPixelBuffer?
-            let status = CVPixelBufferCreate(
-                kCFAllocatorDefault,
-                width,
-                height,
-                kCVPixelFormatType_32BGRA,
-                sourceAttributes as CFDictionary,
-                &pb
-            )
-            guard status == kCVReturnSuccess, let buffer = pb else { return nil }
-
-            CVPixelBufferLockBaseAddress(buffer, [])
-            if let base = CVPixelBufferGetBaseAddress(buffer) {
-                memset(base, 0, CVPixelBufferGetDataSize(buffer))
-            }
-            CVPixelBufferUnlockBaseAddress(buffer, [])
-            return buffer
-        }
-
-        guard let blackBuffer = makeBlackBuffer() else {
-            throw NSError(domain: "PiPManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "Failed to create pixel buffer"])
-        }
-
-        let queue = DispatchQueue(label: "pip.blank.render")
-
-        input.requestMediaDataWhenReady(on: queue) {
-            var frame = 0
-            while input.isReadyForMoreMediaData && frame < totalFrames {
-                let time = CMTime(value: CMTimeValue(frame), timescale: fps)
-                adaptor.append(blackBuffer, withPresentationTime: time)
-                frame += 1
-            }
-
-            if frame >= totalFrames {
-                input.markAsFinished()
-                writer.finishWriting { }
-            }
-        }
-
-        while writer.status == .writing {
-            Thread.sleep(forTimeInterval: 0.05)
-        }
-
-        if writer.status != .completed {
-            throw writer.error ?? NSError(domain: "PiPManager", code: 4, userInfo: [NSLocalizedDescriptionKey: "Video render failed"])
-        }
     }
 }
 
-// MARK: - AVPictureInPictureControllerDelegate
 extension PiPManager: AVPictureInPictureControllerDelegate {
-    nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        PiPManager.shared.setPiPActiveOnMain(true)
+    func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        isActive = true
+        lastMessage = "PiP starting…"
     }
 
-    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        PiPManager.shared.setPiPActiveOnMain(false)
+    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        isActive = true
+        lastMessage = "PiP started."
     }
 
-    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        DispatchQueue.main.async {
-            PiPManager.shared.cleanup()
-        }
+    func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        lastMessage = "PiP stopping…"
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        isActive = false
+        lastMessage = "PiP stopped."
+    }
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                    failedToStartPictureInPictureWithError error: Error) {
+        isActive = false
+        lastMessage = "PiP failed: \(error.localizedDescription)"
     }
 }
