@@ -5,78 +5,73 @@ struct ContentView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
+            List {
                 Section("Device") {
-                    LabeledContent("Battery") {
+                    HStack {
+                        Text("Battery")
+                        Spacer()
                         Text("\(Int(monitor.batteryLevel * 100))%")
+                            .monospacedDigit()
                     }
-                    LabeledContent("State") {
-                        Text(monitor.batteryStateText)
-                    }
-                    LabeledContent("Low Power Mode") {
+
+                    HStack {
+                        Text("Low Power Mode")
+                        Spacer()
                         Text(monitor.isLowPowerMode ? "On" : "Off")
                     }
-                    LabeledContent("Thermal") {
-                        Text(monitor.thermalStateText)
+
+                    HStack {
+                        Text("Thermal State")
+                        Spacer()
+                        Text(monitor.thermalStateDescription)
                     }
-                    LabeledContent("Last Updated") {
-                        Text(monitor.lastUpdatedText)
+                }
+
+                Section("Picture in Picture") {
+                    HStack {
+                        Text("Status")
+                        Spacer()
+                        Text(monitor.pip.isActive ? "Active" : "Inactive")
+                            .foregroundStyle(monitor.pip.isActive ? .blue : .secondary)
+                    }
+
+                    Button("Start PiP") {
+                        monitor.pip.start()
+                    }
+                    .disabled(!monitor.pip.isSupported || monitor.pip.isActive)
+
+                    Button("Stop PiP") {
+                        monitor.pip.stop()
+                    }
+                    .disabled(!monitor.pip.isActive)
+
+                    if !monitor.pip.isSupported {
+                        Text("PiP is not supported on this device.")
                             .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section("Monitoring") {
+                    Button(monitor.isMonitoring ? "Stop Background Monitoring" : "Start Background Monitoring") {
+                        if monitor.isMonitoring {
+                            monitor.stopBackgroundMonitoring()
+                        } else {
+                            monitor.startBackgroundMonitoring()
+                        }
                     }
 
                     Button("Refresh Now") {
                         monitor.refreshNow()
                     }
                 }
-
-                Section("Background Monitoring") {
-                    Toggle("Enable periodic refresh", isOn: $monitor.backgroundMonitorEnabled)
-                        .onChange(of: monitor.backgroundMonitorEnabled) { _, enabled in
-                            if enabled {
-                                monitor.startBackgroundMonitoring()
-                            } else {
-                                monitor.stopBackgroundMonitoring()
-                            }
-                        }
-
-                    Text("This uses a timer while the app is running. It is not true background execution.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Section("Picture in Picture") {
-                    HStack {
-                        Text(monitor.pip.isActive ? "Active (PiP running)" : "Inactive")
-                        Spacer()
-                        Circle()
-                            .frame(width: 10, height: 10)
-                            .foregroundStyle(monitor.pip.isActive ? .blue : .secondary)
-                    }
-
-                    if !monitor.pip.isSupported {
-                        Text("PiP not supported on this device.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        Button(monitor.pip.isActive ? "Stop PiP" : "Start PiP") {
-                            if monitor.pip.isActive {
-                                monitor.pip.stop()
-                            } else {
-                                monitor.pip.start()
-                            }
-                        }
-
-                        if let msg = monitor.pip.lastMessage {
-                            Text(msg)
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
             }
             .navigationTitle("Battery Monitor")
         }
         .onAppear {
-            monitor.refreshNow()
+            monitor.startBackgroundMonitoring()
+        }
+        .onDisappear {
+            monitor.stopBackgroundMonitoring()
         }
     }
 }
