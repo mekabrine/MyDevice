@@ -27,7 +27,6 @@ final class PiPManager: NSObject, ObservableObject {
         }
 
         // If you add a bundled video named "pip.mp4", PiP can actually start.
-        // Without it, the code still compiles and runs, but start() will show a message.
         if let url = Bundle.main.url(forResource: "pip", withExtension: "mp4") {
             let p = AVPlayer(url: url)
             self.player = p
@@ -61,31 +60,37 @@ final class PiPManager: NSObject, ObservableObject {
         pipController?.stopPictureInPicture()
         player?.pause()
     }
+
+    // MARK: - Internal helpers (must run on MainActor)
+    private func setActive(_ active: Bool, message: String? = nil) {
+        isActive = active
+        if let message { lastMessage = message }
+    }
 }
 
-extension PiPManager: AVPictureInPictureControllerDelegate {
-    func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isActive = true
-        lastMessage = "PiP starting…"
+// Swift 6 isolation fix:
+// Make the conformance preconcurrency + make delegate methods nonisolated,
+// then hop back to MainActor for state updates.
+extension PiPManager: @preconcurrency AVPictureInPictureControllerDelegate {
+
+    nonisolated func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in self.setActive(true, message: "PiP starting…") }
     }
 
-    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isActive = true
-        lastMessage = "PiP started."
+    nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in self.setActive(true, message: "PiP started.") }
     }
 
-    func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        lastMessage = "PiP stopping…"
+    nonisolated func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in self.setActive(true, message: "PiP stopping…") }
     }
 
-    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isActive = false
-        lastMessage = "PiP stopped."
+    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        Task { @MainActor in self.setActive(false, message: "PiP stopped.") }
     }
 
-    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
-                                    failedToStartPictureInPictureWithError error: Error) {
-        isActive = false
-        lastMessage = "PiP failed: \(error.localizedDescription)"
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                failedToStartPictureInPictureWithError error: Error) {
+        Task { @MainActor in self.setActive(false, message: "PiP failed: \(error.localizedDescription)") }
     }
 }
