@@ -12,7 +12,7 @@
   <string>$(EXECUTABLE_NAME)</string>
 
   <key>CFBundleIdentifier</key>
-  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <string>com.mekabrine.BatteryMonitor</string>
 
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
@@ -44,7 +44,7 @@
 
   <key>BGTaskSchedulerPermittedIdentifiers</key>
   <array>
-    <string>com.example.BatteryMonitor.refresh</string>
+    <string>com.mekabrine.BatteryMonitor.refresh</string>
   </array>
 </dict>
 </plist>
