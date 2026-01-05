@@ -17,6 +17,7 @@
     111111111111111111111118 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222229 /* Info.plist */; };
 
     111111111111111111111119 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222231 /* AppDelegate.swift */; };
+    111111111111111111111120 /* BatteryHistoryGraph.swift in Sources */ = {isa = PBXBui
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
     222222222222222222222230 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
 
     222222222222222222222231 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+    222222222222222222222232 /* BatteryHistoryGraph.swift */ = {isa = PBXFileReference; l
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
