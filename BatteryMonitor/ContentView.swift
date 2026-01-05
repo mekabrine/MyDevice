@@ -3,25 +3,46 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var monitor: DeviceMonitor
 
+    // MARK: - Display helpers (force “always show”)
+    private var timeToEmptyDisplay: String {
+        let t = monitor.timeToEmptyText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "Estimating…" : t
+    }
+
+    private var timeToFullDisplay: String {
+        let t = monitor.timeToFullText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "Estimating…" : t
+    }
+
+    private var confidenceDisplay: String {
+        let t = monitor.estimateConfidenceText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "—" : t
+    }
+
+    private var monitoringDurationDisplay: String {
+        let t = monitor.estimateMonitoringDurationText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? "0s" : t
+    }
+
     var body: some View {
         NavigationStack {
             List {
                 Section("Device") {
-                    row("Battery", "\(Int(monitor.batteryLevel * 100))%")
+                    row("Battery", "\(Int((monitor.batteryLevel * 100).rounded()))%")
                     row("State", monitor.batteryStateDescription)
                     row("Low Power Mode", monitor.isLowPowerMode ? "On" : "Off")
                     row("Thermal State", monitor.thermalStateDescription)
                 }
 
-                Section("Estimates (improves over time)") {
-                    estimateRow("Time to empty", monitor.timeToEmptyText)
-                    estimateRow("Time to full", monitor.timeToFullText)
+                Section("Estimates") {
+                    estimateRow("Time to empty", timeToEmptyDisplay)
+                    estimateRow("Time to full", timeToFullDisplay)
 
-                    row("Confidence", monitor.estimateConfidenceText)
+                    row("Confidence", confidenceDisplay)
                     row("Samples", "\(monitor.estimateSamples)")
-                    row("Monitoring time", monitor.estimateMonitoringDurationText)
+                    row("Monitoring time", monitoringDurationDisplay)
 
-                    Text("These estimates get more accurate the longer the app is monitoring (more history = better trend).")
+                    Text("Estimates will improve the longer the app is monitoring.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 2)
@@ -36,11 +57,13 @@ struct ContentView: View {
                     Button("Stop PiP") { monitor.pip.stop() }
                         .disabled(!monitor.pip.isActive)
 
+                    // Always show guidance text
                     if !monitor.pip.isSupported {
                         Text("PiP is not supported on this device.")
+                            .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("If PiP doesn’t appear: enable Picture in Picture in iOS Settings and try again.")
+                        Text("If PiP doesn’t appear: enable Picture in Picture in iOS Settings → General → Picture in Picture, then try again. (Real device required; simulator may not show PiP.)")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
@@ -66,17 +89,19 @@ struct ContentView: View {
             Text(title)
             Spacer()
             Text(value).monospacedDigit()
+                .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
     private func estimateRow(_ title: String, _ value: String) -> some View {
+        let isEstimating = value == "Estimating…"
         HStack {
             Text(title)
             Spacer()
             Text(value)
                 .monospacedDigit()
-                .foregroundStyle(value == "Estimating…" ? .secondary : .primary)
+                .foregroundStyle(isEstimating ? .secondary : .primary)
         }
     }
 }
