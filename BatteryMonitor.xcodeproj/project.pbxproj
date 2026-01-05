@@ -66,6 +66,9 @@
         222222222222222222222227,
         222222222222222222222228,
         222222222222222222222229,
+        222222222222222222222223,
+        222222222222222222222232,
+        222222222222222222222224,
       );
       path = BatteryMonitor;
       sourceTree = "<group>";
@@ -88,6 +91,9 @@
         C1C1C1C1C1C1C1C1C1C1C1C1 /* Sources */,
         C2C2C2C2C2C2C2C2C2C2C2C2 /* Resources */,
         333333333333333333333333 /* Frameworks */,
+        111111111111111111111112 /* ContentView.swift in Sources */,
+        111111111111111111111120 /* BatteryHistoryGraph.swift in Sources */,
+        111111111111111111111113 /* DeviceMonitor.swift in Sources */,
       );
       buildRules = (
       );
