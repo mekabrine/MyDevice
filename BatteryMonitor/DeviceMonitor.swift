@@ -1,63 +1,204 @@
 import Foundation
+import SwiftUI
 import UIKit
 
-@MainActor
 final class DeviceMonitor: ObservableObject {
-    @Published var batteryLevel: Float = 0
-    @Published var batteryState: UIDevice.BatteryState = .unknown
-    @Published var isLowPowerMode: Bool = ProcessInfo.processInfo.isLowPowerModeEnabled
-    @Published var thermalState: ProcessInfo.ThermalState = ProcessInfo.processInfo.thermalState
-    @Published var isMonitoring: Bool = false
+    // Device state
+    @Published private(set) var batteryLevel: Double = 0
+    @Published private(set) var batteryStateDescription: String = "Unknown"
+    @Published private(set) var isLowPowerMode: Bool = false
+    @Published private(set) var thermalStateDescription: String = "Unknown"
 
-    // Estimates
-    @Published private(set) var timeToEmpty: TimeInterval?
-    @Published private(set) var timeToFull: TimeInterval?
-    @Published private(set) var estimateConfidence: Double = 0 // 0...1
+    // Estimates (always shown)
+    @Published private(set) var timeToEmptyText: String = "Estimating…"
+    @Published private(set) var timeToFullText: String = "Estimating…"
+    @Published private(set) var estimateConfidenceText: String = "Low"
     @Published private(set) var estimateSamples: Int = 0
-    @Published private(set) var estimateMonitoringDuration: TimeInterval = 0
+    @Published private(set) var estimateMonitoringDurationText: String = "0s"
 
+    // Monitoring state
+    @Published private(set) var isMonitoring: Bool = false
+
+    // PiP
     let pip = PiPManager()
 
-    private let estimator = BatteryEstimator()
     private var timer: Timer?
+    private var bgTask: UIBackgroundTaskIdentifier = .invalid
+
+    // Estimation history (reset when charge direction changes)
+    private struct Sample {
+        let t: TimeInterval
+        let level: Double // 0...1
+    }
+    private var samples: [Sample] = []
+    private var firstSampleDate: Date?
+    private var lastBatteryState: UIDevice.BatteryState = .unknown
 
     init() {
         UIDevice.current.isBatteryMonitoringEnabled = true
+        NotificationCenter.default.addObserver(self, selector: #selector(powerStateChanged),
+                                               name: .NSProcessInfoPowerStateDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(thermalStateChanged),
+                                               name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
         refreshNow()
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(powerModeChanged),
-            name: .NSProcessInfoPowerStateDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(thermalStateChanged),
-            name: ProcessInfo.thermalStateDidChangeNotification,
-            object: nil
-        )
     }
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        timer?.invalidate()
+        stopBackgroundMonitoring()
+        UIDevice.current.isBatteryMonitoringEnabled = false
     }
 
-    // MARK: - UI text helpers
+    func startBackgroundMonitoring() {
+        guard !isMonitoring else { return }
+        isMonitoring = true
 
-    var thermalStateDescription: String {
-        switch thermalState {
-        case .nominal: return "Nominal"
-        case .fair: return "Fair"
-        case .serious: return "Serious"
-        case .critical: return "Critical"
-        @unknown default: return "Unknown"
+        beginBackgroundTaskIfPossible()
+
+        // Sample every 30s (enough to build a trend without spamming)
+        timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            self?.refreshNow()
+        }
+        RunLoop.main.add(timer!, forMode: .common)
+
+        refreshNow()
+    }
+
+    func stopBackgroundMonitoring() {
+        isMonitoring = false
+        timer?.invalidate()
+        timer = nil
+        endBackgroundTaskIfNeeded()
+    }
+
+    func refreshNow() {
+        let device = UIDevice.current
+        let level = Double(max(0, device.batteryLevel)) // batteryLevel can be -1 if unknown
+        let state = device.batteryState
+
+        batteryLevel = level.isFinite ? level : 0
+        batteryStateDescription = Self.describeBatteryState(state)
+        isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        thermalStateDescription = Self.describeThermal(ProcessInfo.processInfo.thermalState)
+
+        updateSamplesAndEstimates(batteryLevel: batteryLevel, state: state)
+
+        // Keep PiP overlay text updated (even if PiP is not active yet)
+        pip.setOverlayText(makeOverlayText())
+    }
+
+    // MARK: - Notifications
+    @objc private func powerStateChanged() {
+        isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
+    @objc private func thermalStateChanged() {
+        thermalStateDescription = Self.describeThermal(ProcessInfo.processInfo.thermalState)
+    }
+
+    // MARK: - Estimation logic
+    private func updateSamplesAndEstimates(batteryLevel: Double, state: UIDevice.BatteryState) {
+        let now = Date()
+
+        // Reset samples when direction changes (charging vs discharging), or if unknown
+        if lastBatteryState != state {
+            samples.removeAll()
+            firstSampleDate = nil
+            lastBatteryState = state
+        }
+
+        if firstSampleDate == nil { firstSampleDate = now }
+
+        guard let start = firstSampleDate else { return }
+        let t = now.timeIntervalSince(start)
+
+        // Store sample only if batteryLevel is valid (>=0) and state is meaningful
+        if batteryLevel > 0 || state == .unplugged || state == .charging || state == .full {
+            samples.append(.init(t: t, level: batteryLevel))
+        }
+
+        // Keep a bounded history (last ~6 hours if 30s interval => 720 samples)
+        if samples.count > 720 {
+            samples.removeFirst(samples.count - 720)
+            // Rebase time to avoid huge t values
+            if let first = samples.first {
+                let shift = first.t
+                samples = samples.map { .init(t: $0.t - shift, level: $0.level) }
+                firstSampleDate = now.addingTimeInterval(-samples.last!.t)
+            }
+        }
+
+        estimateSamples = samples.count
+        estimateMonitoringDurationText = Self.formatDuration(max(0, t))
+
+        // Always show something; only compute a real estimate after enough samples
+        if state == .full {
+            timeToFullText = "Full"
+            timeToEmptyText = "Estimating…"
+            estimateConfidenceText = "High"
+            return
+        }
+
+        // Require at least 6 samples (~3 minutes) before trusting slope
+        guard samples.count >= 6 else {
+            timeToEmptyText = "Estimating…"
+            timeToFullText = "Estimating…"
+            estimateConfidenceText = "Low"
+            return
+        }
+
+        let result = Self.linearFit(samples: samples)
+        guard let slope = result.slope, abs(slope) > 1e-8 else {
+            timeToEmptyText = "Estimating…"
+            timeToFullText = "Estimating…"
+            estimateConfidenceText = "Low"
+            return
+        }
+
+        // slope is level per second: + when charging, - when discharging
+        let r2 = result.r2 ?? 0
+        estimateConfidenceText = Self.confidenceText(sampleCount: samples.count, r2: r2)
+
+        if state == .unplugged {
+            // Discharging expected (slope negative)
+            if slope < 0 {
+                let seconds = batteryLevel / (-slope)
+                timeToEmptyText = Self.formatDuration(seconds)
+            } else {
+                timeToEmptyText = "Estimating…"
+            }
+            timeToFullText = "Estimating…"
+        } else if state == .charging {
+            // Charging expected (slope positive)
+            if slope > 0 {
+                let seconds = (1.0 - batteryLevel) / slope
+                timeToFullText = Self.formatDuration(seconds)
+            } else {
+                timeToFullText = "Estimating…"
+            }
+            timeToEmptyText = "Estimating…"
+        } else {
+            // unknown
+            timeToEmptyText = "Estimating…"
+            timeToFullText = "Estimating…"
         }
     }
 
-    var batteryStateDescription: String {
-        switch batteryState {
+    private func makeOverlayText() -> String {
+        let pct = Int((batteryLevel * 100).rounded())
+        return """
+        Battery: \(pct)% (\(batteryStateDescription))
+        Low Power: \(isLowPowerMode ? "On" : "Off") • Thermal: \(thermalStateDescription)
+        Time to empty: \(timeToEmptyText)
+        Time to full: \(timeToFullText)
+        Confidence: \(estimateConfidenceText) • Samples: \(estimateSamples)
+        Estimates will improve the longer the app is monitoring.
+        """
+    }
+
+    // MARK: - Helpers
+    private static func describeBatteryState(_ s: UIDevice.BatteryState) -> String {
+        switch s {
         case .unknown: return "Unknown"
         case .unplugged: return "Unplugged"
         case .charging: return "Charging"
@@ -66,187 +207,88 @@ final class DeviceMonitor: ObservableObject {
         }
     }
 
-    var timeToEmptyText: String {
-        guard let t = timeToEmpty, t.isFinite, t > 0 else { return "Estimating…" }
-        return formatDuration(t)
-    }
-
-    var timeToFullText: String {
-        guard let t = timeToFull, t.isFinite, t > 0 else { return "Estimating…" }
-        return formatDuration(t)
-    }
-
-    var estimateConfidenceText: String {
-        let pct = Int((estimateConfidence * 100).rounded())
-        let label: String
-        switch estimateConfidence {
-        case 0..<0.33: label = "Low"
-        case 0.33..<0.66: label = "Medium"
-        default: label = "High"
-        }
-        return "\(label) (\(pct)%)"
-    }
-
-    var estimateMonitoringDurationText: String {
-        formatDuration(estimateMonitoringDuration)
-    }
-
-    private func formatDuration(_ t: TimeInterval) -> String {
-        let total = max(0, Int(t.rounded()))
-        let hours = total / 3600
-        let minutes = (total % 3600) / 60
-        if hours > 0 {
-            return "\(hours)h \(minutes)m"
-        } else {
-            return "\(minutes)m"
+    private static func describeThermal(_ t: ProcessInfo.ThermalState) -> String {
+        switch t {
+        case .nominal: return "Nominal"
+        case .fair: return "Fair"
+        case .serious: return "Serious"
+        case .critical: return "Critical"
+        @unknown default: return "Unknown"
         }
     }
 
-    // MARK: - Monitoring
-
-    func startBackgroundMonitoring() {
-        guard !isMonitoring else { return }
-        isMonitoring = true
-
-        timer?.invalidate()
-        timer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshNow()
-            }
-        }
-        RunLoop.main.add(timer!, forMode: .common)
+    private static func formatDuration(_ seconds: TimeInterval) -> String {
+        if !seconds.isFinite || seconds <= 0 { return "Estimating…" }
+        let s = Int(seconds.rounded())
+        let h = s / 3600
+        let m = (s % 3600) / 60
+        let sec = s % 60
+        if h > 0 { return "\(h)h \(m)m" }
+        if m > 0 { return "\(m)m \(sec)s" }
+        return "\(sec)s"
     }
 
-    func stopBackgroundMonitoring() {
-        isMonitoring = false
-        timer?.invalidate()
-        timer = nil
+    private static func confidenceText(sampleCount: Int, r2: Double) -> String {
+        // More samples + better fit => higher confidence
+        if sampleCount >= 30 && r2 >= 0.85 { return "High" }
+        if sampleCount >= 15 && r2 >= 0.65 { return "Medium" }
+        return "Low"
     }
 
-    func refreshNow() {
-        UIDevice.current.isBatteryMonitoringEnabled = true
-
-        let level = UIDevice.current.batteryLevel
-        batteryLevel = max(0, level)
-        batteryState = UIDevice.current.batteryState
-
-        isLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-        thermalState = ProcessInfo.processInfo.thermalState
-
-        // Feed estimator + publish results
-        let now = Date()
-        estimator.addSample(level: batteryLevel, state: batteryState, at: now)
-
-        timeToEmpty = estimator.timeToEmpty
-        timeToFull = estimator.timeToFull
-        estimateConfidence = estimator.confidence
-        estimateSamples = estimator.samples
-        estimateMonitoringDuration = estimator.observedDuration
-
-        // Update PiP overlay text so PiP shows something meaningful
-        pip.setOverlayText(makeOverlayText())
+    private struct Fit {
+        let slope: Double?
+        let intercept: Double?
+        let r2: Double?
     }
 
-    private func makeOverlayText() -> String {
-        let pct = Int(batteryLevel * 100)
-        let empty = timeToEmptyText
-        let full = timeToFullText
-        return """
-        Battery: \(pct)% (\(batteryStateDescription))
-        To empty: \(empty)
-        To full:  \(full)
-        Confidence: \(estimateConfidenceText)
-        (Improves as monitoring continues)
-        """
-    }
+    private static func linearFit(samples: [Sample]) -> Fit {
+        // Least-squares fit: level = a + b*t
+        guard samples.count >= 2 else { return .init(slope: nil, intercept: nil, r2: nil) }
 
-    @objc private func powerModeChanged() { refreshNow() }
-    @objc private func thermalStateChanged() { refreshNow() }
-}
+        let n = Double(samples.count)
+        let meanT = samples.map { $0.t }.reduce(0, +) / n
+        let meanY = samples.map { $0.level }.reduce(0, +) / n
 
-// MARK: - Estimator
+        var sxx = 0.0
+        var sxy = 0.0
+        var syy = 0.0
 
-@MainActor
-private final class BatteryEstimator {
-    private(set) var timeToEmpty: TimeInterval?
-    private(set) var timeToFull: TimeInterval?
-    private(set) var confidence: Double = 0
-    private(set) var samples: Int = 0
-    private(set) var observedDuration: TimeInterval = 0
-
-    private var last: (date: Date, level: Double, state: UIDevice.BatteryState)?
-    private var dischargeRateEMA: Double? // fraction per second (negative)
-    private var chargeRateEMA: Double?    // fraction per second (positive)
-
-    // EMA tuning: smaller alpha = steadier estimate (needs more time to converge)
-    private let alpha: Double = 0.18
-
-    func addSample(level: Float, state: UIDevice.BatteryState, at date: Date) {
-        let lvl = Double(level)
-        guard lvl.isFinite, lvl >= 0 else { return }
-
-        if let prev = last {
-            let dt = date.timeIntervalSince(prev.date)
-            guard dt >= 8 else { // ignore too-frequent samples
-                last = (date, lvl, state)
-                return
-            }
-
-            let dLevel = lvl - prev.level
-            let rate = dLevel / dt // fraction per second
-
-            observedDuration += dt
-            samples += 1
-
-            // Update EMA based on whether we appear to be charging or discharging
-            // (batteryState can be flaky; use both state and sign of rate)
-            if state == .charging || state == .full || rate > 0 {
-                if rate > 0.0000005 { // avoid noise
-                    chargeRateEMA = emaUpdate(current: chargeRateEMA, newValue: rate)
-                }
-            } else if state == .unplugged || rate < 0 {
-                if rate < -0.0000005 {
-                    dischargeRateEMA = emaUpdate(current: dischargeRateEMA, newValue: rate)
-                }
-            }
-
-            recompute(level: lvl, state: state)
-            updateConfidence()
+        for s in samples {
+            let xt = s.t - meanT
+            let yy = s.level - meanY
+            sxx += xt * xt
+            sxy += xt * yy
+            syy += yy * yy
         }
 
-        last = (date, lvl, state)
-    }
+        guard sxx > 0 else { return .init(slope: nil, intercept: nil, r2: nil) }
 
-    private func emaUpdate(current: Double?, newValue: Double) -> Double {
-        guard let current else { return newValue }
-        return (alpha * newValue) + ((1 - alpha) * current)
-    }
+        let b = sxy / sxx
+        let a = meanY - b * meanT
 
-    private func recompute(level: Double, state: UIDevice.BatteryState) {
-        // Time to empty uses discharge rate (negative)
-        if let r = dischargeRateEMA, r < 0 {
-            let seconds = level / (-r)
-            timeToEmpty = seconds.isFinite && seconds > 0 ? seconds : nil
-        } else {
-            timeToEmpty = nil
+        // R^2
+        let ssRes = samples.reduce(0.0) { acc, s in
+            let pred = a + b * s.t
+            let err = s.level - pred
+            return acc + err * err
         }
+        let r2 = syy > 0 ? max(0, min(1, 1 - (ssRes / syy))) : 0
 
-        // Time to full uses charge rate (positive), only meaningful if not already full
-        if level >= 0.999 || state == .full {
-            timeToFull = 0
-        } else if let r = chargeRateEMA, r > 0 {
-            let seconds = (1.0 - level) / r
-            timeToFull = seconds.isFinite && seconds > 0 ? seconds : nil
-        } else {
-            timeToFull = nil
+        return .init(slope: b, intercept: a, r2: r2)
+    }
+
+    // MARK: - Background task (best-effort)
+    private func beginBackgroundTaskIfPossible() {
+        endBackgroundTaskIfNeeded()
+        bgTask = UIApplication.shared.beginBackgroundTask(withName: "BatteryMonitor") { [weak self] in
+            self?.endBackgroundTaskIfNeeded()
         }
     }
 
-    private func updateConfidence() {
-        // Simple confidence model: improves with more observed time and more samples.
-        // ~30 minutes of observation gets you near "High".
-        let tScore = min(1.0, observedDuration / (30 * 60))
-        let sScore = min(1.0, Double(samples) / 60.0) // ~10 minutes at 10s interval
-        confidence = min(1.0, (0.65 * tScore) + (0.35 * sScore))
+    private func endBackgroundTaskIfNeeded() {
+        if bgTask != .invalid {
+            UIApplication.shared.endBackgroundTask(bgTask)
+            bgTask = .invalid
+        }
     }
 }
