@@ -14,6 +14,7 @@
 		111111111111111111111115 /* PiPManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222225 /* PiPManager.swift */; };
 		111111111111111111111116 /* PiPOverlayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222226 /* PiPOverlayViewController.swift */; };
 		111111111111111111111117 /* PiPHostWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222227 /* PiPHostWindow.swift */; };
+		111111111111111111111119 /* BatteryHistoryGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222231 /* BatteryHistoryGraph.swift */; };
 		111111111111111111111118 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222228 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -25,6 +26,7 @@
 		222222222222222222222225 /* PiPManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPManager.swift; sourceTree = "<group>"; };
 		222222222222222222222226 /* PiPOverlayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPOverlayViewController.swift; sourceTree = "<group>"; };
 		222222222222222222222227 /* PiPHostWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPHostWindow.swift; sourceTree = "<group>"; };
+		222222222222222222222231 /* BatteryHistoryGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryHistoryGraph.swift; sourceTree = "<group>"; };
 		222222222222222222222228 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		222222222222222222222229 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		222222222222222222222230 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -56,6 +58,7 @@
 				222222222222222222222222 /* BatteryMonitorApp.swift */,
 				222222222222222222222221 /* AppDelegate.swift */,
 				222222222222222222222223 /* ContentView.swift */,
+				222222222222222222222231 /* BatteryHistoryGraph.swift */,
 				222222222222222222222224 /* DeviceMonitor.swift */,
 				222222222222222222222225 /* PiPManager.swift */,
 				222222222222222222222226 /* PiPOverlayViewController.swift */,
@@ -146,6 +149,7 @@
 				111111111111111111111111 /* BatteryMonitorApp.swift in Sources */,
 				111111111111111111111112 /* AppDelegate.swift in Sources */,
 				111111111111111111111113 /* ContentView.swift in Sources */,
+				111111111111111111111119 /* BatteryHistoryGraph.swift in Sources */,
 				111111111111111111111114 /* DeviceMonitor.swift in Sources */,
 				111111111111111111111115 /* PiPManager.swift in Sources */,
 				111111111111111111111116 /* PiPOverlayViewController.swift in Sources */,
