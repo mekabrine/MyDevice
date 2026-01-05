@@ -3,61 +3,62 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var monitor: DeviceMonitor
 
-    private var showTimeToEmpty: Bool { monitor.batteryState == .unplugged }
-    private var showTimeToFull: Bool { monitor.batteryState == .charging }
+    private var showTimeToEmpty: Bool {
+        monitor.batteryState == .unplugged
+    }
+
+    private var showTimeToFull: Bool {
+        monitor.batteryState == .charging || monitor.batteryState == .full
+    }
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
+                Section(header: Text("Device")) {
                     row("Battery", "\(Int((monitor.batteryLevel * 100).rounded()))%")
                     row("State", monitor.batteryStateDescription)
                     row("Low Power Mode", monitor.isLowPowerMode ? "On" : "Off")
                     row("Temperature", monitor.thermalStateDescription)
-                } header: {
-                    Text("Device")
                 }
 
-                Section {
+                Section(header: Text("Estimates")) {
                     if showTimeToEmpty {
                         estimateRow("Time to empty", monitor.timeToEmptyText)
                     }
+
                     if showTimeToFull {
-                        estimateRow("Time to full", monitor.timeToFullText)
+                        // Only show "Time to full" when plugged in (charging/full)
+                        estimateRow("Time to full", monitor.batteryState == .full ? "Full" : monitor.timeToFullText)
                     }
 
                     row("Confidence", monitor.estimateConfidenceText)
                     row("Samples", "\(monitor.estimateSamples)")
                     row("Monitoring time", monitor.estimateMonitoringDurationText)
 
-                    Text("Estimates will improve the longer the app is monitoring.")
+                    Text("Estimates improve as more checks are collected.")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 2)
-                } header: {
-                    Text("Estimates")
                 }
 
-                Section {
+                Section(header: Text("Battery Trend (last checks)")) {
                     if monitor.checks.isEmpty {
                         Text("No checks yet.")
                             .foregroundStyle(.secondary)
                     } else {
                         BatteryHistoryGraph(checks: monitor.checks)
+                            // Keep the graph wide inside the list row
                             .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
+                            .listRowSeparator(.hidden)
                     }
-                } header: {
-                    Text("Battery Trend (last checks)")
                 }
 
-                Section {
+                Section(header: Text("Monitoring")) {
                     Button(monitor.isMonitoring ? "Stop Background Monitoring" : "Start Background Monitoring") {
                         monitor.isMonitoring ? monitor.stopBackgroundMonitoring() : monitor.startBackgroundMonitoring()
                     }
 
                     Button("Refresh Now") { monitor.refreshNow() }
-                } header: {
-                    Text("Monitoring")
                 }
             }
             .navigationTitle("Battery Monitor")
@@ -66,7 +67,6 @@ struct ContentView: View {
         .onDisappear { monitor.stopBackgroundMonitoring() }
     }
 
-    @ViewBuilder
     private func row(_ title: String, _ value: String) -> some View {
         HStack {
             Text(title)
@@ -77,12 +77,12 @@ struct ContentView: View {
         }
     }
 
-    @ViewBuilder
     private func estimateRow(_ title: String, _ value: String) -> some View {
-        let display = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Estimating…" : value
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let display = trimmed.isEmpty ? "Estimating…" : trimmed
         let isEstimating = (display == "Estimating…")
 
-        HStack {
+        return HStack {
             Text(title)
             Spacer()
             Text(display)
