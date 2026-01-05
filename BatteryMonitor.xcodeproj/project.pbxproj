@@ -15,6 +15,8 @@
     111111111111111111111116 /* PiPHostWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222227 /* PiPHostWindow.swift */; };
     111111111111111111111117 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222228 /* Assets.xcassets */; };
     111111111111111111111118 /* Info.plist in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222229 /* Info.plist */; };
+
+    111111111111111111111119 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222231 /* AppDelegate.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -27,6 +29,8 @@
     222222222222222222222228 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
     222222222222222222222229 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
     222222222222222222222230 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+
+    222222222222222222222231 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -52,6 +56,7 @@
       isa = PBXGroup;
       children = (
         222222222222222222222222,
+        222222222222222222222231,
         222222222222222222222223,
         222222222222222222222224,
         222222222222222222222225,
@@ -140,6 +145,7 @@
       buildActionMask = 2147483647;
       files = (
         111111111111111111111111 /* BatteryMonitorApp.swift in Sources */,
+        111111111111111111111119 /* AppDelegate.swift in Sources */,
         111111111111111111111112 /* ContentView.swift in Sources */,
         111111111111111111111113 /* DeviceMonitor.swift in Sources */,
         111111111111111111111114 /* PiPManager.swift in Sources */,
@@ -166,16 +172,12 @@
           "$(inherited)",
           "@executable_path/Frameworks",
         );
-        MARKETING_VERSION = 1.0;
+        MARKETING_VERSION = 1.1;
         PRODUCT_BUNDLE_IDENTIFIER = com.mekabrine.BatteryMonitor;
         PRODUCT_NAME = BatteryMonitor;
         SDKROOT = iphoneos;
         SWIFT_VERSION = 5.0;
         TARGETED_DEVICE_FAMILY = "1";
-        UIBackgroundModes = (
-          audio,
-          picture-in-picture,
-        );
       };
       name = Debug;
     };
@@ -193,17 +195,13 @@
           "$(inherited)",
           "@executable_path/Frameworks",
         );
-        MARKETING_VERSION = 1.0;
-        PRODUCT_BUNDLE_IDENTIFIER = com.example.BatteryMonitor;
+        MARKETING_VERSION = 1.1;
+        PRODUCT_BUNDLE_IDENTIFIER = com.mekabrine.BatteryMonitor;
         PRODUCT_NAME = BatteryMonitor;
         SDKROOT = iphoneos;
         SWIFT_VERSION = 5.0;
         SWIFT_OPTIMIZATION_LEVEL = "-O";
         TARGETED_DEVICE_FAMILY = "1";
-        UIBackgroundModes = (
-          audio,
-          picture-in-picture,
-        );
       };
       name = Release;
     };
@@ -216,7 +214,14 @@
         CODE_SIGN_STYLE = Automatic;
         DEVELOPMENT_TEAM = "";
         ENABLE_BITCODE = NO;
+        INFOPLIST_FILE = BatteryMonitor/Info.plist;
+        PRODUCT_BUNDLE_IDENTIFIER = com.mekabrine.BatteryMonitor;
         PRODUCT_NAME = BatteryMonitor;
+        // If you want background sampling with BGProcessingTaskRequest, keep these:
+        INFOPLIST_KEY_UIBackgroundModes = (
+          fetch,
+          processing,
+        );
       };
       name = Debug;
     };
@@ -228,7 +233,13 @@
         CODE_SIGN_STYLE = Automatic;
         DEVELOPMENT_TEAM = "";
         ENABLE_BITCODE = NO;
+        INFOPLIST_FILE = BatteryMonitor/Info.plist;
+        PRODUCT_BUNDLE_IDENTIFIER = com.mekabrine.BatteryMonitor;
         PRODUCT_NAME = BatteryMonitor;
+        INFOPLIST_KEY_UIBackgroundModes = (
+          fetch,
+          processing,
+        );
       };
       name = Release;
     };
