@@ -31,35 +31,31 @@ struct BatteryCheck: Identifiable, Codable, Equatable {
     }
 }
 
-@MainActor
 final class DeviceMonitor: ObservableObject {
     static let shared = DeviceMonitor()
 
-    // MARK: - Background task identifiers
-    // IMPORTANT: These must be present in Info.plist -> BGTaskSchedulerPermittedIdentifiers
+    // MUST match Info.plist BGTaskSchedulerPermittedIdentifiers
     private static let refreshTaskId = "com.mekabrine.BatteryMonitor.refresh"
     private static let processingTaskId = "com.mekabrine.BatteryMonitor.processing"
 
-    // MARK: - Device state
+    // Device state
     @Published private(set) var batteryLevel: Double = 0
     @Published private(set) var batteryState: UIDevice.BatteryState = .unknown
     @Published private(set) var batteryStateDescription: String = "Unknown"
     @Published private(set) var isLowPowerMode: Bool = false
     @Published private(set) var thermalStateDescription: String = "Normal"
 
-    // MARK: - Estimates (UI can hide based on these flags)
+    // Estimates
     @Published private(set) var timeToEmptyText: String = "Estimating…"
     @Published private(set) var timeToFullText: String = "Estimating…"
-    @Published private(set) var showTimeToEmpty: Bool = true
-    @Published private(set) var showTimeToFull: Bool = true
     @Published private(set) var estimateConfidenceText: String = "Low"
     @Published private(set) var estimateSamples: Int = 0
     @Published private(set) var estimateMonitoringDurationText: String = "0s"
 
-    // MARK: - Battery checks (graph)
+    // Battery checks for graph
     @Published private(set) var checks: [BatteryCheck] = []
 
-    // MARK: - Monitoring state
+    // Monitoring state
     @Published private(set) var isMonitoring: Bool = false
 
     private var timer: Timer?
@@ -72,44 +68,21 @@ final class DeviceMonitor: ObservableObject {
     }
     private var samples: [Sample] = []
     private var firstSampleDate: Date?
-    private var lastDirection: Direction = .unknown
-
-    private enum Direction: Equatable {
-        case charging
-        case discharging
-        case unknown
-    }
+    private var lastBatteryState: UIDevice.BatteryState = .unknown
 
     // Persistence
     private let checksStoreKey = "BatteryMonitor.checks.v1"
     private let maxChecksToKeep = 2000
 
-    // Avoid spamming identical checks when refresh triggers multiple times quickly
-    private let minimumSecondsBetweenSavedChecks: TimeInterval = 25
-    private var lastSavedCheckDate: Date?
-
-    // BG registration should happen once
-    private var didRegisterBGTasks = false
-
     private init() {
         UIDevice.current.isBatteryMonitoringEnabled = true
-
         loadChecks()
 
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(powerStateChanged),
-            name: .NSProcessInfoPowerStateDidChange,
-            object: nil
-        )
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(thermalStateChanged),
-            name: ProcessInfo.thermalStateDidChangeNotification,
-            object: nil
-        )
+        NotificationCenter.default.addObserver(self, selector: #selector(powerStateChanged),
+                                               name: .NSProcessInfoPowerStateDidChange, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(thermalStateChanged),
+                                               name: ProcessInfo.thermalStateDidChangeNotification, object: nil)
 
-        // Best-effort: update immediately on launch
         refreshNow()
     }
 
@@ -119,33 +92,20 @@ final class DeviceMonitor: ObservableObject {
         UIDevice.current.isBatteryMonitoringEnabled = false
     }
 
-    // MARK: - Public helpers for graph labels
-    func secondsSincePreviousCheck(for check: BatteryCheck) -> TimeInterval? {
-        guard let idx = checks.firstIndex(where: { $0.id == check.id }) else { return nil }
-        guard idx > 0 else { return nil }
-        return check.date.timeIntervalSince(checks[idx - 1].date)
-    }
-
-    // MARK: - Monitoring control
     func startBackgroundMonitoring() {
         guard !isMonitoring else { return }
         isMonitoring = true
 
         beginBackgroundTaskIfPossible()
 
-        // Foreground sampling cadence (works while app is active)
+        // Foreground sampling cadence
         timer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
-            Task { @MainActor in
-                self?.refreshNow()
-            }
+            self?.refreshNow()
         }
-        if let timer { RunLoop.main.add(timer, forMode: .common) }
-
-        // Best-effort background scheduling
-        scheduleBackgroundRefresh()
-        scheduleBackgroundProcessing()
+        RunLoop.main.add(timer!, forMode: .common)
 
         refreshNow()
+        scheduleBackgroundTasks()
     }
 
     func stopBackgroundMonitoring() {
@@ -155,7 +115,6 @@ final class DeviceMonitor: ObservableObject {
         endBackgroundTaskIfNeeded()
     }
 
-    // MARK: - Core refresh
     func refreshNow() {
         let device = UIDevice.current
         let now = Date()
@@ -167,25 +126,23 @@ final class DeviceMonitor: ObservableObject {
         let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled
         let thermal = Self.describeThermal(ProcessInfo.processInfo.thermalState)
 
-        batteryLevel = min(1, max(0, level))
-        batteryState = state
-        batteryStateDescription = Self.describeBatteryState(state)
-        isLowPowerMode = lowPower
-        thermalStateDescription = thermal
+        DispatchQueue.main.async {
+            self.batteryLevel = min(1, max(0, level))
+            self.batteryState = state
+            self.batteryStateDescription = Self.describeBatteryState(state)
+            self.isLowPowerMode = lowPower
+            self.thermalStateDescription = thermal
 
-        appendCheckIfNeeded(now: now, level: batteryLevel, state: state, lowPower: lowPower)
-        updateSamplesAndEstimates(batteryLevel: batteryLevel, state: state, now: now)
+            self.appendCheck(now: now, level: self.batteryLevel, state: state, lowPower: lowPower)
+            self.updateSamplesAndEstimates(batteryLevel: self.batteryLevel, state: state, now: now)
+        }
     }
 
     // MARK: - Checks / graph
-    private func appendCheckIfNeeded(now: Date, level: Double, state: UIDevice.BatteryState, lowPower: Bool) {
-        if let last = lastSavedCheckDate, now.timeIntervalSince(last) < minimumSecondsBetweenSavedChecks {
-            return
-        }
-
+    private func appendCheck(now: Date, level: Double, state: UIDevice.BatteryState, lowPower: Bool) {
         let isCharging = (state == .charging || state == .full)
+
         checks.append(BatteryCheck(date: now, level: level, isCharging: isCharging, isLowPower: lowPower))
-        lastSavedCheckDate = now
 
         if checks.count > maxChecksToKeep {
             checks.removeFirst(checks.count - maxChecksToKeep)
@@ -207,7 +164,6 @@ final class DeviceMonitor: ObservableObject {
         guard let data = UserDefaults.standard.data(forKey: checksStoreKey) else { return }
         do {
             checks = try JSONDecoder().decode([BatteryCheck].self, from: data)
-            lastSavedCheckDate = checks.last?.date
         } catch {
             checks = []
         }
@@ -224,24 +180,11 @@ final class DeviceMonitor: ObservableObject {
 
     // MARK: - Estimation logic
     private func updateSamplesAndEstimates(batteryLevel: Double, state: UIDevice.BatteryState, now: Date) {
-        // Determine direction for stable sampling
-        let direction: Direction
-        switch state {
-        case .unplugged:
-            direction = .discharging
-        case .charging, .full:
-            direction = .charging
-        case .unknown:
-            direction = .unknown
-        @unknown default:
-            direction = .unknown
-        }
-
-        // Reset samples when direction changes or becomes unknown
-        if lastDirection != direction || direction == .unknown {
+        // Reset samples when direction changes
+        if lastBatteryState != state {
             samples.removeAll()
             firstSampleDate = nil
-            lastDirection = direction
+            lastBatteryState = state
         }
 
         if firstSampleDate == nil { firstSampleDate = now }
@@ -250,19 +193,13 @@ final class DeviceMonitor: ObservableObject {
 
         samples.append(.init(t: t, level: batteryLevel))
 
-        // Keep bounded history for estimates
-        if samples.count > 720 { // ~6 hours @ 30s in foreground
+        if samples.count > 720 { // ~6 hours @ 30s
             samples.removeFirst(samples.count - 720)
         }
 
         estimateSamples = samples.count
         estimateMonitoringDurationText = Self.formatDuration(max(0, t))
 
-        // Only show the relevant estimate
-        showTimeToEmpty = (state == .unplugged)
-        showTimeToFull = (state == .charging || state == .full)
-
-        // Defaults
         timeToEmptyText = "Estimating…"
         timeToFullText = "Estimating…"
 
@@ -272,7 +209,6 @@ final class DeviceMonitor: ObservableObject {
             return
         }
 
-        // Need some history
         guard samples.count >= 6 else {
             estimateConfidenceText = "Low"
             return
@@ -288,20 +224,14 @@ final class DeviceMonitor: ObservableObject {
         estimateConfidenceText = Self.confidenceText(sampleCount: samples.count, r2: r2)
 
         if state == .unplugged {
-            // Discharging expected (slope negative)
             if slope < 0 {
                 let seconds = batteryLevel / (-slope)
                 timeToEmptyText = Self.formatDuration(seconds)
-            } else {
-                timeToEmptyText = "Estimating…"
             }
         } else if state == .charging {
-            // Charging expected (slope positive)
             if slope > 0 {
                 let seconds = (1.0 - batteryLevel) / slope
                 timeToFullText = Self.formatDuration(seconds)
-            } else {
-                timeToFullText = "Estimating…"
             }
         }
     }
@@ -317,13 +247,12 @@ final class DeviceMonitor: ObservableObject {
         }
     }
 
-    // Requested: more understandable temperature labels
     private static func describeThermal(_ t: ProcessInfo.ThermalState) -> String {
         switch t {
         case .nominal: return "Normal"
         case .fair: return "Slightly warm"
-        case .serious: return "Hot"
-        case .critical: return "Burning"
+        case .serious: return "Warm"
+        case .critical: return "Hot"
         @unknown default: return "Unknown"
         }
     }
@@ -387,45 +316,36 @@ final class DeviceMonitor: ObservableObject {
 
     // MARK: - BackgroundTasks (best-effort)
     func registerBackgroundTasks() {
-        guard !didRegisterBGTasks else { return }
-        didRegisterBGTasks = true
-
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.refreshTaskId, using: nil) { task in
-            Task { @MainActor in
-                self.handleAppRefresh(task: task as! BGAppRefreshTask)
-            }
+            self.handleAppRefresh(task: task as! BGAppRefreshTask)
         }
 
         BGTaskScheduler.shared.register(forTaskWithIdentifier: Self.processingTaskId, using: nil) { task in
-            Task { @MainActor in
-                self.handleProcessing(task: task as! BGProcessingTask)
-            }
+            self.handleProcessing(task: task as! BGProcessingTask)
         }
     }
 
-    func scheduleBackgroundRefresh() {
-        // Cancel outstanding to avoid duplicates
-        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.refreshTaskId)
+    func scheduleBackgroundTasks() {
+        scheduleBackgroundRefresh()
+        scheduleProcessing()
+    }
 
+    private func scheduleBackgroundRefresh() {
         let request = BGAppRefreshTaskRequest(identifier: Self.refreshTaskId)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60) // system decides
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         try? BGTaskScheduler.shared.submit(request)
     }
 
-    func scheduleBackgroundProcessing() {
-        // Cancel outstanding to avoid duplicates
-        BGTaskScheduler.shared.cancel(taskRequestWithIdentifier: Self.processingTaskId)
-
+    private func scheduleProcessing() {
         let request = BGProcessingTaskRequest(identifier: Self.processingTaskId)
-        request.requiresExternalPower = false
         request.requiresNetworkConnectivity = false
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 60 * 60) // system decides
+        request.requiresExternalPower = false
+        request.earliestBeginDate = Date(timeIntervalSinceNow: 15 * 60)
         try? BGTaskScheduler.shared.submit(request)
     }
 
     private func handleAppRefresh(task: BGAppRefreshTask) {
-        // Always schedule next
-        scheduleBackgroundRefresh()
+        scheduleBackgroundTasks()
 
         task.expirationHandler = {
             task.setTaskCompleted(success: false)
@@ -436,8 +356,7 @@ final class DeviceMonitor: ObservableObject {
     }
 
     private func handleProcessing(task: BGProcessingTask) {
-        // Always schedule next
-        scheduleBackgroundProcessing()
+        scheduleBackgroundTasks()
 
         task.expirationHandler = {
             task.setTaskCompleted(success: false)
@@ -447,13 +366,11 @@ final class DeviceMonitor: ObservableObject {
         task.setTaskCompleted(success: true)
     }
 
-    // MARK: - Short background time when app is backgrounded (seconds, not hours)
+    // MARK: - Short background time when app is backgrounded
     private func beginBackgroundTaskIfPossible() {
         endBackgroundTaskIfNeeded()
         bgTask = UIApplication.shared.beginBackgroundTask(withName: "BatteryMonitor") { [weak self] in
-            Task { @MainActor in
-                self?.endBackgroundTaskIfNeeded()
-            }
+            self?.endBackgroundTaskIfNeeded()
         }
     }
 
