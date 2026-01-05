@@ -27,7 +27,6 @@ struct ContentView: View {
                     }
 
                     if showTimeToFull {
-                        // Only show "Time to full" when plugged in (charging/full)
                         estimateRow("Time to full", monitor.batteryState == .full ? "Full" : monitor.timeToFullText)
                     }
 
@@ -47,9 +46,9 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
                     } else {
                         BatteryHistoryGraph(checks: monitor.checks)
-                            // Keep the graph wide inside the list row
                             .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                            .listRowSeparator(.hidden)
+                            // Fully qualify to avoid “cannot infer contextual base”
+                            .listRowSeparator(Visibility.hidden)
                     }
                 }
 
