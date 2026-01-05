@@ -27,14 +27,16 @@ struct ContentView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section("Device") {
+                Section {
                     row("Battery", "\(Int((monitor.batteryLevel * 100).rounded()))%")
                     row("State", monitor.batteryStateDescription)
                     row("Low Power Mode", monitor.isLowPowerMode ? "On" : "Off")
                     row("Thermal State", monitor.thermalStateDescription)
+                } header: {
+                    Text("Device")
                 }
 
-                Section("Estimates") {
+                Section {
                     estimateRow("Time to empty", timeToEmptyDisplay)
                     estimateRow("Time to full", timeToFullDisplay)
 
@@ -46,9 +48,11 @@ struct ContentView: View {
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 2)
+                } header: {
+                    Text("Estimates")
                 }
 
-                Section("Picture in Picture") {
+                Section {
                     row("Status", monitor.pip.isActive ? "Active" : "Inactive")
 
                     Button("Start PiP") { monitor.pip.start() }
@@ -57,24 +61,27 @@ struct ContentView: View {
                     Button("Stop PiP") { monitor.pip.stop() }
                         .disabled(!monitor.pip.isActive)
 
-                    // Always show guidance text
                     if !monitor.pip.isSupported {
                         Text("PiP is not supported on this device.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("If PiP doesn’t appear: enable Picture in Picture in iOS Settings → General → Picture in Picture, then try again. (Real device required; simulator may not show PiP.)")
+                        Text("If PiP doesn’t appear: enable iOS Settings → General → Picture in Picture. Use a real device (simulator may not show PiP).")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
+                } header: {
+                    Text("Picture in Picture")
                 }
 
-                Section("Monitoring") {
+                Section {
                     Button(monitor.isMonitoring ? "Stop Background Monitoring" : "Start Background Monitoring") {
                         monitor.isMonitoring ? monitor.stopBackgroundMonitoring() : monitor.startBackgroundMonitoring()
                     }
 
                     Button("Refresh Now") { monitor.refreshNow() }
+                } header: {
+                    Text("Monitoring")
                 }
             }
             .navigationTitle("Battery Monitor")
@@ -88,14 +95,15 @@ struct ContentView: View {
         HStack {
             Text(title)
             Spacer()
-            Text(value).monospacedDigit()
+            Text(value)
+                .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
     }
 
     @ViewBuilder
     private func estimateRow(_ title: String, _ value: String) -> some View {
-        let isEstimating = value == "Estimating…"
+        let isEstimating = (value == "Estimating…")
         HStack {
             Text(title)
             Spacer()
