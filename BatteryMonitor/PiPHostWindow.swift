@@ -1,19 +1,15 @@
 import UIKit
 
 final class PiPHostWindow: UIWindow {
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        commonInit()
+    override init(windowScene: UIWindowScene) {
+        super.init(windowScene: windowScene)
+        backgroundColor = .clear
+        isHidden = true
     }
 
     required init?(coder: NSCoder) {
         super.init(coder: coder)
-        commonInit()
-    }
-
-    private func commonInit() {
-        windowLevel = .normal
         backgroundColor = .clear
-        isHidden = false
+        isHidden = true
     }
 }
