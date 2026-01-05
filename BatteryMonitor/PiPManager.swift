@@ -2,17 +2,32 @@ import Foundation
 import UIKit
 import AVKit
 import AVFoundation
-import CoreGraphics
+import CoreText
 
 final class PiPManager: NSObject, ObservableObject {
 
-    // MARK: - Public UI state
+    // MARK: - Backward-compatible API (to fix your current build errors)
+
+    /// Your ContentView.swift references `pip.isActive`
+    var isActive: Bool { isPiPActive }
+
+    /// Your DeviceMonitor.swift calls `pip.setOverlayText(...)`
+    func setOverlayText(_ text: String) {
+        DispatchQueue.main.async {
+            self.overlayText = text
+        }
+    }
+
+    // MARK: - Published UI state
 
     @Published private(set) var pipStatusText: String = "Inactive"
     @Published private(set) var isPiPActive: Bool = false
     @Published private(set) var canStartPiP: Bool = false
 
-    // MARK: - PiP Internals
+    /// Optional extra lines provided by DeviceMonitor (still shown in PiP).
+    @Published private var overlayText: String = ""
+
+    // MARK: - PiP internals
 
     private let displayLayer = AVSampleBufferDisplayLayer()
     private var pipController: AVPictureInPictureController?
@@ -35,7 +50,7 @@ final class PiPManager: NSObject, ObservableObject {
     }
 
     private var samples: [BatterySample] = []
-    private let maxSamples = 240                 // ~16 minutes at 4s sample cadence
+    private let maxSamples = 240                 // ~16 minutes at 4s cadence
     private let sampleCadence: TimeInterval = 4  // seconds
     private var lastSampleTime: TimeInterval = 0
 
@@ -78,7 +93,7 @@ final class PiPManager: NSObject, ObservableObject {
         displayLayer.backgroundColor = UIColor.black.cgColor
         displayLayer.needsDisplayOnBoundsChange = true
 
-        // Use a PiP-friendly render size (portrait-ish).
+        // PiP-friendly render size (portrait-ish).
         let width = 540
         let height = 960
 
@@ -95,7 +110,6 @@ final class PiPManager: NSObject, ObservableObject {
             self.formatDescription = fmt
         }
 
-        // PixelBuffer pool for BGRA frames
         let poolAttributes: [String: Any] = [
             kCVPixelBufferPoolMinimumBufferCountKey as String: 3
         ]
@@ -125,7 +139,6 @@ final class PiPManager: NSObject, ObservableObject {
             return
         }
 
-        // iOS 15+ sample-buffer PiP content source.
         if #available(iOS 15.0, *) {
             let contentSource = AVPictureInPictureController.ContentSource(
                 sampleBufferDisplayLayer: displayLayer,
@@ -181,12 +194,10 @@ final class PiPManager: NSObject, ObservableObject {
 
         guard let pixelBuffer = makePixelBuffer(from: pool) else { return }
 
-        // Draw overlay into pixel buffer
         renderQueue.sync {
             drawOverlay(into: pixelBuffer)
         }
 
-        // Create CMSampleBuffer
         var timing = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: fps),
             presentationTimeStamp: CMTime(value: frameIndex, timescale: fps),
@@ -205,8 +216,6 @@ final class PiPManager: NSObject, ObservableObject {
         frameIndex += 1
 
         guard createStatus == noErr, let sbuf = sampleBuffer else { return }
-
-        // Enqueue to display layer
         displayLayer.enqueue(sbuf)
     }
 
@@ -236,59 +245,52 @@ final class PiPManager: NSObject, ObservableObject {
             bytesPerRow: bytesPerRow,
             space: CGColorSpaceCreateDeviceRGB(),
             bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue // BGRA
-        ) else {
-            return
-        }
+        ) else { return }
 
-        // Background
         ctx.setFillColor(UIColor.black.cgColor)
         ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
 
-        // Content
         let lines = buildOverlayLines()
 
-        // Typography
         let titleFont = UIFont.systemFont(ofSize: 44, weight: .bold)
-        let bodyFont = UIFont.monospacedSystemFont(ofSize: 28, weight: .semibold)
-        let footFont = UIFont.systemFont(ofSize: 22, weight: .regular)
+        let bodyFont  = UIFont.monospacedSystemFont(ofSize: 28, weight: .semibold)
+        let footFont  = UIFont.systemFont(ofSize: 22, weight: .regular)
 
-        // Margins
         var y: CGFloat = 48
         let x: CGFloat = 36
 
-        // Title
-        draw(text: "Battery Monitor", in: ctx, at: CGPoint(x: x, y: y), font: titleFont, color: .white)
+        draw(text: "Battery Monitor", in: ctx, canvasHeight: height, at: CGPoint(x: x, y: y), font: titleFont, color: .white)
         y += 72
 
-        // Body lines
         for (idx, line) in lines.enumerated() {
-            let font = (idx < 6) ? bodyFont : footFont
+            let font: UIFont = (idx < 7) ? bodyFont : footFont
             let color: UIColor = (idx == 0) ? .white : .systemGray2
-            draw(text: line, in: ctx, at: CGPoint(x: x, y: y), font: font, color: color)
-            y += (idx < 6) ? 44 : 34
+            draw(text: line, in: ctx, canvasHeight: height, at: CGPoint(x: x, y: y), font: font, color: color)
+            y += (idx < 7) ? 44 : 34
         }
     }
 
-    private func draw(text: String, in ctx: CGContext, at point: CGPoint, font: UIFont, color: UIColor) {
+    private func draw(text: String, in ctx: CGContext, canvasHeight: Int, at point: CGPoint, font: UIFont, color: UIColor) {
         let attrs: [NSAttributedString.Key: Any] = [
             .font: font,
             .foregroundColor: color
         ]
         let attributed = NSAttributedString(string: text, attributes: attrs)
+        let line = CTLineCreateWithAttributedString(attributed)
 
-        // CoreGraphics text drawing
+        // Flip to a top-left origin (UIKit-like) for easier y positioning.
         ctx.saveGState()
-        ctx.translateBy(x: 0, y: CGFloat(ctx.height))
+        ctx.translateBy(x: 0, y: CGFloat(canvasHeight))
         ctx.scaleBy(x: 1, y: -1)
 
-        let line = CTLineCreateWithAttributedString(attributed)
-        ctx.textPosition = CGPoint(x: point.x, y: CGFloat(ctx.height) - point.y - font.lineHeight)
+        // CoreText draws at the baseline.
+        ctx.textPosition = CGPoint(x: point.x, y: point.y + font.ascender)
         CTLineDraw(line, ctx)
 
         ctx.restoreGState()
     }
 
-    // MARK: - Overlay text
+    // MARK: - Overlay text assembly (always show estimates)
 
     private func buildOverlayLines() -> [String] {
         let level = max(0.0, min(1.0, Double(UIDevice.current.batteryLevel)))
@@ -299,29 +301,33 @@ final class PiPManager: NSObject, ObservableObject {
 
         let estimate = computeEstimate()
 
-        let statusLine = isPiPActive ? "Status: Active" : "Status: Inactive"
-        let batteryLine = "Battery: \(percent)%"
-        let lowPowerLine = "Low Power Mode: \(lowPower)"
-        let thermalLine = "Thermal: \(thermal)"
+        var lines: [String] = []
+        lines.append(isPiPActive ? "Status: Active" : "Status: Inactive")
 
-        let directionLine = "Trend: \(estimate.trend)"
-        let remainingLine = "Est. Remaining: \(estimate.remaining)"
-        let samplesLine = "Samples: \(estimate.sampleInfo)"
+        // If DeviceMonitor provided overlay text, show it (keeps your existing UI logic working).
+        let extra = overlayText
+            .split(separator: "\n")
+            .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
 
-        let note1 = "Estimates improve the longer the app is monitoring."
-        let note2 = "Keep monitoring running for better accuracy."
+        if !extra.isEmpty {
+            // Keep it readable: show up to 4 lines from DeviceMonitor.
+            lines.append(contentsOf: extra.prefix(4))
+        } else {
+            // Fallback baseline stats.
+            lines.append("Battery: \(percent)%")
+            lines.append("Low Power Mode: \(lowPower)")
+            lines.append("Thermal: \(thermal)")
+        }
 
-        return [
-            statusLine,
-            batteryLine,
-            lowPowerLine,
-            thermalLine,
-            directionLine,
-            remainingLine,
-            samplesLine,
-            note1,
-            note2
-        ]
+        // Always show estimates.
+        lines.append("Trend: \(estimate.trend)")
+        lines.append("Est. Remaining: \(estimate.remaining)")
+        lines.append("Samples: \(estimate.sampleInfo)")
+        lines.append("Estimates improve the longer the app is monitoring.")
+        lines.append("Keep monitoring running for better accuracy.")
+
+        return lines
     }
 
     private func thermalStateString(_ s: ProcessInfo.ThermalState) -> String {
@@ -348,12 +354,10 @@ final class PiPManager: NSObject, ObservableObject {
     }
 
     private func computeEstimate() -> (trend: String, remaining: String, sampleInfo: String) {
-        // Need enough spread/time to be meaningful
         guard samples.count >= 4 else {
             return ("Calculating…", "Calculating…", "\(samples.count) (collecting)")
         }
 
-        // Linear regression on (t, level)
         let xs = samples.map { $0.t }
         let ys = samples.map { $0.level }
 
@@ -373,43 +377,40 @@ final class PiPManager: NSObject, ObservableObject {
             return ("Calculating…", "Calculating…", "\(samples.count) (low variance)")
         }
 
-        let slopePerSec = num / den  // level change per second (0..1 per sec)
+        let slopePerSec = num / den
         let slopePerHour = slopePerSec * 3600.0
 
-        // If slope is tiny, treat as unknown (or device not changing battery)
-        if abs(slopePerHour) < 0.2 {
-            let span = max(1, Int(xs.last! - xs.first!))
+        // Very small slope => basically stable (or not enough change yet).
+        if abs(slopePerHour) < 0.002 { // ~0.2%/hr
+            let span = max(1, Int((xs.last ?? meanX) - (xs.first ?? meanX)))
             return ("Stable", "N/A", "\(samples.count) over \(span)s")
         }
 
         let current = ys.last ?? 0.0
         let isCharging = slopePerHour > 0
-
         let target: Double = isCharging ? 1.0 : 0.0
         let remainingLevel = target - current
         let seconds = remainingLevel / slopePerSec
 
         if seconds.isNaN || !seconds.isFinite || seconds <= 0 {
-            let span = max(1, Int(xs.last! - xs.first!))
+            let span = max(1, Int((xs.last ?? meanX) - (xs.first ?? meanX)))
             return (isCharging ? "Charging" : "Discharging", "Calculating…", "\(samples.count) over \(span)s")
         }
 
         let remainingStr = formatDuration(seconds)
-        let trendStr = isCharging ? String(format: "Charging (%.1f%%/hr)", slopePerHour * 100.0)
-                                  : String(format: "Discharging (%.1f%%/hr)", slopePerHour * 100.0)
+        let trendStr = isCharging
+            ? String(format: "Charging (%.1f%%/hr)", slopePerHour * 100.0)
+            : String(format: "Discharging (%.1f%%/hr)", slopePerHour * 100.0)
 
-        let span = max(1, Int(xs.last! - xs.first!))
+        let span = max(1, Int((xs.last ?? meanX) - (xs.first ?? meanX)))
         return (trendStr, remainingStr, "\(samples.count) over \(span)s")
     }
 
     private func formatDuration(_ seconds: Double) -> String {
-        let s = Int(seconds.rounded())
+        let s = max(0, Int(seconds.rounded()))
         let h = s / 3600
         let m = (s % 3600) / 60
-
-        if h <= 0 {
-            return "\(m)m"
-        }
+        if h <= 0 { return "\(m)m" }
         return "\(h)h \(m)m"
     }
 }
@@ -419,9 +420,7 @@ final class PiPManager: NSObject, ObservableObject {
 extension PiPManager: AVPictureInPictureControllerDelegate {
 
     func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        DispatchQueue.main.async {
-            self.pipStatusText = "Starting…"
-        }
+        DispatchQueue.main.async { self.pipStatusText = "Starting…" }
     }
 
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
@@ -432,9 +431,7 @@ extension PiPManager: AVPictureInPictureControllerDelegate {
     }
 
     func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        DispatchQueue.main.async {
-            self.pipStatusText = "Stopping…"
-        }
+        DispatchQueue.main.async { self.pipStatusText = "Stopping…" }
     }
 
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
@@ -460,11 +457,10 @@ extension PiPManager: AVPictureInPictureSampleBufferPlaybackDelegate {
 
     nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
                                                 setPlaying playing: Bool) {
-        // Live overlay: ignore play/pause. We keep pushing frames.
+        // Live overlay: ignore play/pause.
     }
 
     nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
-        // Live content; treat as effectively unbounded.
         return CMTimeRange(start: .zero, duration: .positiveInfinity)
     }
 
@@ -480,7 +476,6 @@ extension PiPManager: AVPictureInPictureSampleBufferPlaybackDelegate {
     nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
                                                 skipByInterval skipInterval: CMTime,
                                                 completion completionHandler: @escaping () -> Void) {
-        // Required signature (Xcode 16 / iOS 18 SDK uses `completion:`).
         completionHandler()
     }
 }
