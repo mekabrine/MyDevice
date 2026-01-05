@@ -20,15 +20,13 @@ struct BatteryHistoryGraph: View {
             ScrollView(.horizontal, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 8) {
                     ZStack(alignment: .topLeading) {
-                        // grid lines
                         GridLines()
                             .frame(height: height)
 
-                        // path + points
-                        GeometryReader { geo in
+                        GeometryReader { _ in
                             let w = max(CGFloat(visibleChecks.count - 1) * pointSpacing, 1)
                             let h = height
-                            let pts = points(width: w, height: h)
+                            let pts = points(height: h)
 
                             Path { p in
                                 guard pts.count >= 2 else { return }
@@ -50,11 +48,11 @@ struct BatteryHistoryGraph: View {
                                     .position(x: pt.x, y: h)
                                     .id(check.id)
                             }
+                            .frame(width: w, height: h, alignment: .topLeading)
                         }
                         .frame(width: graphWidth(), height: height)
                     }
 
-                    // labels under points
                     HStack(alignment: .top, spacing: 0) {
                         ForEach(Array(visibleChecks.enumerated()), id: \.element.id) { idx, check in
                             VStack(spacing: 2) {
@@ -78,12 +76,10 @@ struct BatteryHistoryGraph: View {
             }
             .frame(height: height + 60)
             .onAppear {
-                // Always start scrolled all the way right (most recent)
                 scrollToRight(proxy: proxy, animated: false)
                 didInitialScroll = true
             }
             .onChange(of: checks.count) { _ in
-                // On every update, keep it scrolled to the most recent
                 if didInitialScroll {
                     scrollToRight(proxy: proxy, animated: true)
                 }
@@ -106,7 +102,7 @@ struct BatteryHistoryGraph: View {
         max(CGFloat(max(visibleChecks.count - 1, 0)) * pointSpacing + 1, 1)
     }
 
-    private func points(width: CGFloat, height: CGFloat) -> [CGPoint] {
+    private func points(height: CGFloat) -> [CGPoint] {
         guard !visibleChecks.isEmpty else { return [] }
         return visibleChecks.enumerated().map { idx, c in
             let x = CGFloat(idx) * pointSpacing
