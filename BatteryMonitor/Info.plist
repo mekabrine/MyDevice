@@ -45,6 +45,7 @@
   <key>BGTaskSchedulerPermittedIdentifiers</key>
   <array>
     <string>com.mekabrine.BatteryMonitor.refresh</string>
+    <string>com.mekabrine.BatteryMonitor.processing</string>
   </array>
 </dict>
 </plist>
