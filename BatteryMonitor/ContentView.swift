@@ -3,26 +3,8 @@ import SwiftUI
 struct ContentView: View {
     @ObservedObject var monitor: DeviceMonitor
 
-    // MARK: - Display helpers (force “always show”)
-    private var timeToEmptyDisplay: String {
-        let t = monitor.timeToEmptyText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? "Estimating…" : t
-    }
-
-    private var timeToFullDisplay: String {
-        let t = monitor.timeToFullText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? "Estimating…" : t
-    }
-
-    private var confidenceDisplay: String {
-        let t = monitor.estimateConfidenceText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? "—" : t
-    }
-
-    private var monitoringDurationDisplay: String {
-        let t = monitor.estimateMonitoringDurationText.trimmingCharacters(in: .whitespacesAndNewlines)
-        return t.isEmpty ? "0s" : t
-    }
+    private var showTimeToEmpty: Bool { monitor.batteryState == .unplugged }
+    private var showTimeToFull: Bool { monitor.batteryState == .charging }
 
     var body: some View {
         NavigationStack {
@@ -31,18 +13,22 @@ struct ContentView: View {
                     row("Battery", "\(Int((monitor.batteryLevel * 100).rounded()))%")
                     row("State", monitor.batteryStateDescription)
                     row("Low Power Mode", monitor.isLowPowerMode ? "On" : "Off")
-                    row("Thermal State", monitor.thermalStateDescription)
+                    row("Temperature", monitor.thermalStateDescription)
                 } header: {
                     Text("Device")
                 }
 
                 Section {
-                    estimateRow("Time to empty", timeToEmptyDisplay)
-                    estimateRow("Time to full", timeToFullDisplay)
+                    if showTimeToEmpty {
+                        estimateRow("Time to empty", monitor.timeToEmptyText)
+                    }
+                    if showTimeToFull {
+                        estimateRow("Time to full", monitor.timeToFullText)
+                    }
 
-                    row("Confidence", confidenceDisplay)
+                    row("Confidence", monitor.estimateConfidenceText)
                     row("Samples", "\(monitor.estimateSamples)")
-                    row("Monitoring time", monitoringDurationDisplay)
+                    row("Monitoring time", monitor.estimateMonitoringDurationText)
 
                     Text("Estimates will improve the longer the app is monitoring.")
                         .font(.footnote)
@@ -53,25 +39,15 @@ struct ContentView: View {
                 }
 
                 Section {
-                    row("Status", monitor.pip.isActive ? "Active" : "Inactive")
-
-                    Button("Start PiP") { monitor.pip.start() }
-                        .disabled(!monitor.pip.isSupported || monitor.pip.isActive)
-
-                    Button("Stop PiP") { monitor.pip.stop() }
-                        .disabled(!monitor.pip.isActive)
-
-                    if !monitor.pip.isSupported {
-                        Text("PiP is not supported on this device.")
-                            .font(.footnote)
+                    if monitor.checks.isEmpty {
+                        Text("No checks yet.")
                             .foregroundStyle(.secondary)
                     } else {
-                        Text("If PiP doesn’t appear: enable iOS Settings → General → Picture in Picture. Use a real device (simulator may not show PiP).")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        BatteryHistoryGraph(checks: monitor.checks)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
                     }
                 } header: {
-                    Text("Picture in Picture")
+                    Text("Battery Trend (last checks)")
                 }
 
                 Section {
@@ -103,11 +79,13 @@ struct ContentView: View {
 
     @ViewBuilder
     private func estimateRow(_ title: String, _ value: String) -> some View {
-        let isEstimating = (value == "Estimating…")
+        let display = value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "Estimating…" : value
+        let isEstimating = (display == "Estimating…")
+
         HStack {
             Text(title)
             Spacer()
-            Text(value)
+            Text(display)
                 .monospacedDigit()
                 .foregroundStyle(isEstimating ? .secondary : .primary)
         }
