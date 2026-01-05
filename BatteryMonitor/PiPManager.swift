@@ -1,236 +1,486 @@
-import AVFoundation
-import AVKit
+import Foundation
 import UIKit
+import AVKit
+import AVFoundation
+import CoreGraphics
 
-@MainActor
 final class PiPManager: NSObject, ObservableObject {
-    @Published private(set) var isActive: Bool = false
+
+    // MARK: - Public UI state
+
+    @Published private(set) var pipStatusText: String = "Inactive"
+    @Published private(set) var isPiPActive: Bool = false
+    @Published private(set) var canStartPiP: Bool = false
+
+    // MARK: - PiP Internals
 
     private let displayLayer = AVSampleBufferDisplayLayer()
     private var pipController: AVPictureInPictureController?
 
-    private var timer: DispatchSourceTimer?
+    private let renderQueue = DispatchQueue(label: "pip.render.queue")
+    private let sampleQueue = DispatchQueue(label: "pip.sample.queue")
+
+    private var pixelBufferPool: CVPixelBufferPool?
+    private var formatDescription: CMVideoFormatDescription?
+
+    private var frameTimer: DispatchSourceTimer?
     private var frameIndex: Int64 = 0
-    private var videoFormat: CMVideoFormatDescription?
+    private let fps: Int32 = 15
 
-    private var overlayText: String = "Battery Monitor\n(Starting…)"
+    // MARK: - Estimation (battery slope)
 
-    var isSupported: Bool {
-        AVPictureInPictureController.isPictureInPictureSupported()
+    private struct BatterySample {
+        let t: TimeInterval
+        let level: Double // 0.0...1.0
     }
+
+    private var samples: [BatterySample] = []
+    private let maxSamples = 240                 // ~16 minutes at 4s sample cadence
+    private let sampleCadence: TimeInterval = 4  // seconds
+    private var lastSampleTime: TimeInterval = 0
+
+    // MARK: - Init
 
     override init() {
         super.init()
-        setup()
+
+        UIDevice.current.isBatteryMonitoringEnabled = true
+
+        setupDisplayLayer()
+        setupPiPIfAvailable()
+        startFramePump()
     }
 
-    private func setup() {
-        guard isSupported else { return }
+    deinit {
+        stopFramePump()
+    }
 
+    // MARK: - Public controls
+
+    func startPiP() {
+        DispatchQueue.main.async {
+            guard let controller = self.pipController else { return }
+            guard controller.isPictureInPicturePossible else { return }
+            controller.startPictureInPicture()
+        }
+    }
+
+    func stopPiP() {
+        DispatchQueue.main.async {
+            self.pipController?.stopPictureInPicture()
+        }
+    }
+
+    // MARK: - Setup
+
+    private func setupDisplayLayer() {
         displayLayer.videoGravity = .resizeAspect
+        displayLayer.backgroundColor = UIColor.black.cgColor
+        displayLayer.needsDisplayOnBoundsChange = true
 
-        let contentSource = AVPictureInPictureController.ContentSource(
-            sampleBufferDisplayLayer: displayLayer,
-            playbackDelegate: self
+        // Use a PiP-friendly render size (portrait-ish).
+        let width = 540
+        let height = 960
+
+        var fmt: CMVideoFormatDescription?
+        let status = CMVideoFormatDescriptionCreate(
+            allocator: kCFAllocatorDefault,
+            codecType: kCVPixelFormatType_32BGRA,
+            width: Int32(width),
+            height: Int32(height),
+            extensions: nil,
+            formatDescriptionOut: &fmt
         )
-
-        let controller = AVPictureInPictureController(contentSource: contentSource)
-        controller.delegate = self
-        pipController = controller
-    }
-
-    func setOverlayText(_ text: String) {
-        overlayText = text
-    }
-
-    func start() {
-        guard isSupported else { return }
-        guard let pipController else { return }
-        if pipController.isPictureInPictureActive { return }
-
-        startFeedingFrames()
-        pipController.startPictureInPicture()
-    }
-
-    func stop() {
-        pipController?.stopPictureInPicture()
-        stopFeedingFrames()
-    }
-
-    private func startFeedingFrames() {
-        stopFeedingFrames()
-        frameIndex = 0
-
-        let t = DispatchSource.makeTimerSource(queue: DispatchQueue.main)
-        t.schedule(deadline: .now(), repeating: 1.0) // 1 fps is enough for “status” PiP
-        t.setEventHandler { [weak self] in
-            self?.enqueueFrame()
+        if status == noErr, let fmt {
+            self.formatDescription = fmt
         }
-        timer = t
-        t.resume()
+
+        // PixelBuffer pool for BGRA frames
+        let poolAttributes: [String: Any] = [
+            kCVPixelBufferPoolMinimumBufferCountKey as String: 3
+        ]
+        let pixelAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32BGRA),
+            kCVPixelBufferWidthKey as String: width,
+            kCVPixelBufferHeightKey as String: height,
+            kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+        ]
+
+        var pool: CVPixelBufferPool?
+        CVPixelBufferPoolCreate(
+            kCFAllocatorDefault,
+            poolAttributes as CFDictionary,
+            pixelAttributes as CFDictionary,
+            &pool
+        )
+        self.pixelBufferPool = pool
     }
 
-    private func stopFeedingFrames() {
-        timer?.cancel()
-        timer = nil
-    }
+    private func setupPiPIfAvailable() {
+        guard AVPictureInPictureController.isPictureInPictureSupported() else {
+            DispatchQueue.main.async {
+                self.canStartPiP = false
+                self.pipStatusText = "PiP Not Supported"
+            }
+            return
+        }
 
-    private func enqueueFrame() {
-        let size = CGSize(width: 640, height: 360)
-        let image = renderOverlayImage(size: size, text: overlayText)
-
-        guard let pixelBuffer = makePixelBuffer(from: image, size: size) else { return }
-
-        if videoFormat == nil {
-            var fmt: CMVideoFormatDescription?
-            CMVideoFormatDescriptionCreateForImageBuffer(
-                allocator: kCFAllocatorDefault,
-                imageBuffer: pixelBuffer,
-                formatDescriptionOut: &fmt
+        // iOS 15+ sample-buffer PiP content source.
+        if #available(iOS 15.0, *) {
+            let contentSource = AVPictureInPictureController.ContentSource(
+                sampleBufferDisplayLayer: displayLayer,
+                playbackDelegate: self
             )
-            videoFormat = fmt
+            let controller = AVPictureInPictureController(contentSource: contentSource)
+            controller.delegate = self
+            self.pipController = controller
+
+            DispatchQueue.main.async {
+                self.canStartPiP = controller.isPictureInPicturePossible
+                self.pipStatusText = controller.isPictureInPicturePossible ? "Inactive" : "Unavailable"
+            }
+        } else {
+            DispatchQueue.main.async {
+                self.canStartPiP = false
+                self.pipStatusText = "Requires iOS 15+"
+            }
+        }
+    }
+
+    // MARK: - Frame pump
+
+    private func startFramePump() {
+        stopFramePump()
+
+        let timer = DispatchSource.makeTimerSource(queue: sampleQueue)
+        timer.schedule(deadline: .now(), repeating: 1.0 / Double(fps), leeway: .milliseconds(10))
+        timer.setEventHandler { [weak self] in
+            self?.pumpOneFrame()
+        }
+        timer.resume()
+        frameTimer = timer
+    }
+
+    private func stopFramePump() {
+        frameTimer?.cancel()
+        frameTimer = nil
+    }
+
+    private func pumpOneFrame() {
+        guard let pool = pixelBufferPool,
+              let fmt = formatDescription else {
+            return
         }
 
-        guard let format = videoFormat else { return }
+        // Update battery samples at a slower cadence than video frames.
+        let now = Date().timeIntervalSince1970
+        if now - lastSampleTime >= sampleCadence {
+            lastSampleTime = now
+            recordBatterySample(at: now)
+        }
 
-        let pts = CMTime(value: frameIndex, timescale: 1)
+        guard let pixelBuffer = makePixelBuffer(from: pool) else { return }
+
+        // Draw overlay into pixel buffer
+        renderQueue.sync {
+            drawOverlay(into: pixelBuffer)
+        }
+
+        // Create CMSampleBuffer
         var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 1),
-            presentationTimeStamp: pts,
+            duration: CMTime(value: 1, timescale: fps),
+            presentationTimeStamp: CMTime(value: frameIndex, timescale: fps),
             decodeTimeStamp: .invalid
         )
 
         var sampleBuffer: CMSampleBuffer?
-        let status = CMSampleBufferCreateReadyWithImageBuffer(
+        let createStatus = CMSampleBufferCreateReadyWithImageBuffer(
             allocator: kCFAllocatorDefault,
             imageBuffer: pixelBuffer,
-            formatDescription: format,
+            formatDescription: fmt,
             sampleTiming: &timing,
             sampleBufferOut: &sampleBuffer
         )
 
-        guard status == noErr, let sb = sampleBuffer else { return }
-
-        displayLayer.enqueue(sb)
         frameIndex += 1
+
+        guard createStatus == noErr, let sbuf = sampleBuffer else { return }
+
+        // Enqueue to display layer
+        displayLayer.enqueue(sbuf)
     }
 
-    private func renderOverlayImage(size: CGSize, text: String) -> UIImage {
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { ctx in
-            UIColor.black.setFill()
-            ctx.fill(CGRect(origin: .zero, size: size))
-
-            // subtle border
-            UIColor(white: 1.0, alpha: 0.15).setStroke()
-            ctx.cgContext.setLineWidth(2)
-            ctx.cgContext.stroke(CGRect(x: 8, y: 8, width: size.width - 16, height: size.height - 16))
-
-            let paragraph = NSMutableParagraphStyle()
-            paragraph.alignment = .left
-
-            let attrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.monospacedSystemFont(ofSize: 22, weight: .semibold),
-                .foregroundColor: UIColor.white,
-                .paragraphStyle: paragraph
-            ]
-
-            let smallAttrs: [NSAttributedString.Key: Any] = [
-                .font: UIFont.monospacedSystemFont(ofSize: 16, weight: .regular),
-                .foregroundColor: UIColor(white: 1.0, alpha: 0.85),
-                .paragraphStyle: paragraph
-            ]
-
-            let title = "Battery Monitor (PiP)\n"
-            (title as NSString).draw(
-                in: CGRect(x: 24, y: 22, width: size.width - 48, height: 60),
-                withAttributes: attrs
-            )
-
-            (text as NSString).draw(
-                in: CGRect(x: 24, y: 86, width: size.width - 48, height: size.height - 120),
-                withAttributes: smallAttrs
-            )
-        }
-    }
-
-    private func makePixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
+    private func makePixelBuffer(from pool: CVPixelBufferPool) -> CVPixelBuffer? {
         var pb: CVPixelBuffer?
-        let attrs: [CFString: Any] = [
-            kCVPixelBufferCGImageCompatibilityKey: true,
-            kCVPixelBufferCGBitmapContextCompatibilityKey: true
-        ]
+        let status = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &pb)
+        return (status == kCVReturnSuccess) ? pb : nil
+    }
 
-        let status = CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            Int(size.width),
-            Int(size.height),
-            kCVPixelFormatType_32BGRA,
-            attrs as CFDictionary,
-            &pb
-        )
+    // MARK: - Overlay rendering
 
-        guard status == kCVReturnSuccess, let pixelBuffer = pb else { return nil }
-
+    private func drawOverlay(into pixelBuffer: CVPixelBuffer) {
         CVPixelBufferLockBaseAddress(pixelBuffer, [])
         defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
 
-        guard let ctx = CGContext(
-            data: CVPixelBufferGetBaseAddress(pixelBuffer),
-            width: Int(size.width),
-            height: Int(size.height),
-            bitsPerComponent: 8,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(pixelBuffer),
-            space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue
-        ) else { return nil }
+        guard let base = CVPixelBufferGetBaseAddress(pixelBuffer) else { return }
 
-        guard let cg = image.cgImage else { return nil }
-        ctx.draw(cg, in: CGRect(origin: .zero, size: size))
-        return pixelBuffer
+        let width = CVPixelBufferGetWidth(pixelBuffer)
+        let height = CVPixelBufferGetHeight(pixelBuffer)
+        let bytesPerRow = CVPixelBufferGetBytesPerRow(pixelBuffer)
+
+        guard let ctx = CGContext(
+            data: base,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue // BGRA
+        ) else {
+            return
+        }
+
+        // Background
+        ctx.setFillColor(UIColor.black.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+
+        // Content
+        let lines = buildOverlayLines()
+
+        // Typography
+        let titleFont = UIFont.systemFont(ofSize: 44, weight: .bold)
+        let bodyFont = UIFont.monospacedSystemFont(ofSize: 28, weight: .semibold)
+        let footFont = UIFont.systemFont(ofSize: 22, weight: .regular)
+
+        // Margins
+        var y: CGFloat = 48
+        let x: CGFloat = 36
+
+        // Title
+        draw(text: "Battery Monitor", in: ctx, at: CGPoint(x: x, y: y), font: titleFont, color: .white)
+        y += 72
+
+        // Body lines
+        for (idx, line) in lines.enumerated() {
+            let font = (idx < 6) ? bodyFont : footFont
+            let color: UIColor = (idx == 0) ? .white : .systemGray2
+            draw(text: line, in: ctx, at: CGPoint(x: x, y: y), font: font, color: color)
+            y += (idx < 6) ? 44 : 34
+        }
+    }
+
+    private func draw(text: String, in ctx: CGContext, at point: CGPoint, font: UIFont, color: UIColor) {
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: color
+        ]
+        let attributed = NSAttributedString(string: text, attributes: attrs)
+
+        // CoreGraphics text drawing
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: CGFloat(ctx.height))
+        ctx.scaleBy(x: 1, y: -1)
+
+        let line = CTLineCreateWithAttributedString(attributed)
+        ctx.textPosition = CGPoint(x: point.x, y: CGFloat(ctx.height) - point.y - font.lineHeight)
+        CTLineDraw(line, ctx)
+
+        ctx.restoreGState()
+    }
+
+    // MARK: - Overlay text
+
+    private func buildOverlayLines() -> [String] {
+        let level = max(0.0, min(1.0, Double(UIDevice.current.batteryLevel)))
+        let percent = Int((level * 100.0).rounded())
+
+        let lowPower = ProcessInfo.processInfo.isLowPowerModeEnabled ? "On" : "Off"
+        let thermal = thermalStateString(ProcessInfo.processInfo.thermalState)
+
+        let estimate = computeEstimate()
+
+        let statusLine = isPiPActive ? "Status: Active" : "Status: Inactive"
+        let batteryLine = "Battery: \(percent)%"
+        let lowPowerLine = "Low Power Mode: \(lowPower)"
+        let thermalLine = "Thermal: \(thermal)"
+
+        let directionLine = "Trend: \(estimate.trend)"
+        let remainingLine = "Est. Remaining: \(estimate.remaining)"
+        let samplesLine = "Samples: \(estimate.sampleInfo)"
+
+        let note1 = "Estimates improve the longer the app is monitoring."
+        let note2 = "Keep monitoring running for better accuracy."
+
+        return [
+            statusLine,
+            batteryLine,
+            lowPowerLine,
+            thermalLine,
+            directionLine,
+            remainingLine,
+            samplesLine,
+            note1,
+            note2
+        ]
+    }
+
+    private func thermalStateString(_ s: ProcessInfo.ThermalState) -> String {
+        switch s {
+        case .nominal: return "Nominal"
+        case .fair: return "Fair"
+        case .serious: return "Serious"
+        case .critical: return "Critical"
+        @unknown default: return "Unknown"
+        }
+    }
+
+    // MARK: - Battery estimation
+
+    private func recordBatterySample(at t: TimeInterval) {
+        let raw = Double(UIDevice.current.batteryLevel)
+        guard raw >= 0 else { return } // batteryLevel can be -1 if unavailable
+
+        let clamped = max(0.0, min(1.0, raw))
+        samples.append(.init(t: t, level: clamped))
+        if samples.count > maxSamples {
+            samples.removeFirst(samples.count - maxSamples)
+        }
+    }
+
+    private func computeEstimate() -> (trend: String, remaining: String, sampleInfo: String) {
+        // Need enough spread/time to be meaningful
+        guard samples.count >= 4 else {
+            return ("Calculating…", "Calculating…", "\(samples.count) (collecting)")
+        }
+
+        // Linear regression on (t, level)
+        let xs = samples.map { $0.t }
+        let ys = samples.map { $0.level }
+
+        let n = Double(samples.count)
+        let meanX = xs.reduce(0, +) / n
+        let meanY = ys.reduce(0, +) / n
+
+        var num = 0.0
+        var den = 0.0
+        for i in 0..<samples.count {
+            let dx = xs[i] - meanX
+            num += dx * (ys[i] - meanY)
+            den += dx * dx
+        }
+
+        guard den > 0 else {
+            return ("Calculating…", "Calculating…", "\(samples.count) (low variance)")
+        }
+
+        let slopePerSec = num / den  // level change per second (0..1 per sec)
+        let slopePerHour = slopePerSec * 3600.0
+
+        // If slope is tiny, treat as unknown (or device not changing battery)
+        if abs(slopePerHour) < 0.2 {
+            let span = max(1, Int(xs.last! - xs.first!))
+            return ("Stable", "N/A", "\(samples.count) over \(span)s")
+        }
+
+        let current = ys.last ?? 0.0
+        let isCharging = slopePerHour > 0
+
+        let target: Double = isCharging ? 1.0 : 0.0
+        let remainingLevel = target - current
+        let seconds = remainingLevel / slopePerSec
+
+        if seconds.isNaN || !seconds.isFinite || seconds <= 0 {
+            let span = max(1, Int(xs.last! - xs.first!))
+            return (isCharging ? "Charging" : "Discharging", "Calculating…", "\(samples.count) over \(span)s")
+        }
+
+        let remainingStr = formatDuration(seconds)
+        let trendStr = isCharging ? String(format: "Charging (%.1f%%/hr)", slopePerHour * 100.0)
+                                  : String(format: "Discharging (%.1f%%/hr)", slopePerHour * 100.0)
+
+        let span = max(1, Int(xs.last! - xs.first!))
+        return (trendStr, remainingStr, "\(samples.count) over \(span)s")
+    }
+
+    private func formatDuration(_ seconds: Double) -> String {
+        let s = Int(seconds.rounded())
+        let h = s / 3600
+        let m = (s % 3600) / 60
+
+        if h <= 0 {
+            return "\(m)m"
+        }
+        return "\(h)h \(m)m"
     }
 }
+
+// MARK: - AVPictureInPictureControllerDelegate
 
 extension PiPManager: AVPictureInPictureControllerDelegate {
-    nonisolated func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        Task { @MainActor in self.isActive = true }
-    }
 
-    nonisolated func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        Task { @MainActor in
-            self.isActive = false
-            self.stopFeedingFrames()
+    func pictureInPictureControllerWillStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        DispatchQueue.main.async {
+            self.pipStatusText = "Starting…"
         }
     }
 
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
-                                                failedToStartPictureInPictureWithError error: Error) {
-        Task { @MainActor in
-            self.isActive = false
-            self.stopFeedingFrames()
+    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        DispatchQueue.main.async {
+            self.isPiPActive = true
+            self.pipStatusText = "Active"
+        }
+    }
+
+    func pictureInPictureControllerWillStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        DispatchQueue.main.async {
+            self.pipStatusText = "Stopping…"
+        }
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        DispatchQueue.main.async {
+            self.isPiPActive = false
+            self.pipStatusText = "Inactive"
+        }
+    }
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                    failedToStartPictureInPictureWithError error: Error) {
+        DispatchQueue.main.async {
+            self.isPiPActive = false
+            self.pipStatusText = "Failed: \(error.localizedDescription)"
         }
     }
 }
 
+// MARK: - AVPictureInPictureSampleBufferPlaybackDelegate
+
+@available(iOS 15.0, *)
 extension PiPManager: AVPictureInPictureSampleBufferPlaybackDelegate {
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, setPlaying playing: Bool) {
-        // We generate frames continuously while active; no-op.
+
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                setPlaying playing: Bool) {
+        // Live overlay: ignore play/pause. We keep pushing frames.
     }
 
     nonisolated func pictureInPictureControllerTimeRangeForPlayback(_ pictureInPictureController: AVPictureInPictureController) -> CMTimeRange {
-        // “Infinite” time range is fine for a status overlay.
-        return CMTimeRange(start: .zero, duration: CMTime.positiveInfinity)
+        // Live content; treat as effectively unbounded.
+        return CMTimeRange(start: .zero, duration: .positiveInfinity)
     }
 
     nonisolated func pictureInPictureControllerIsPlaybackPaused(_ pictureInPictureController: AVPictureInPictureController) -> Bool {
         return false
     }
 
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, didTransitionToRenderSize newRenderSize: CMVideoDimensions) {
-        // No-op.
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                didTransitionToRenderSize newRenderSize: CMVideoDimensions) {
+        // No-op
     }
 
-    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController, skipByInterval skipInterval: CMTime, completionHandler: @escaping () -> Void) {
+    nonisolated func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                                skipByInterval skipInterval: CMTime,
+                                                completion completionHandler: @escaping () -> Void) {
+        // Required signature (Xcode 16 / iOS 18 SDK uses `completion:`).
         completionHandler()
     }
 }
