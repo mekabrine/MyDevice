@@ -35,13 +35,7 @@ jobs:
           echo "Using project: $XCODEPROJ"
 
           # Get first scheme from xcodebuild -list -json
-          SCHEME="$(xcodebuild -list -json -project "$XCODEPROJ" | /usr/bin/python3 - <<'PY'
-import json,sys
-data=json.load(sys.stdin)
-schemes=data.get("project",{}).get("schemes",[]) or []
-print(schemes[0] if schemes else "")
-PY
-)"
+          SCHEME="$(xcodebuild -list -json -project "$XCODEPROJ" | python3 -c "import json,sys; d=json.load(sys.stdin); s=(d.get('project',{}).get('schemes') or []); print(s[0] if s else '')")"
           if [ -z "$SCHEME" ]; then
             echo "No schemes found. Make sure your scheme is Shared in Xcode (Manage Schemes -> Shared)."
             xcodebuild -list -project "$XCODEPROJ"
@@ -49,7 +43,6 @@ PY
           fi
 
           echo "Using scheme: $SCHEME"
-
           echo "xcodeproj=$XCODEPROJ" >> "$GITHUB_OUTPUT"
           echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
 
@@ -62,7 +55,7 @@ PY
             -scheme "${{ steps.detect.outputs.scheme }}" \
             -configuration Release \
             -sdk iphoneos \
-            -destination 'generic/platform=iOS' \
+            -destination "generic/platform=iOS" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_IDENTITY="" \
@@ -74,15 +67,15 @@ PY
         run: |
           set -euo pipefail
 
-          APP_PATH="$(find build/Build/Products -maxdepth 4 -type d -name "*.app" | head -n 1 || true)"
+          APP_PATH="$(find build/Build/Products -maxdepth 6 -type d -name "*.app" | head -n 1 || true)"
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
             echo "App not found under build/Build/Products."
-            find build -maxdepth 6 -type d -name "*.app" -print || true
+            find build -maxdepth 8 -type d -name "*.app" -print || true
             exit 1
           fi
 
-          APP_BASENAME="$(basename "$APP_PATH")"         # e.g. MyDevice.app
-          APP_NAME="${APP_BASENAME%.app}"                # e.g. MyDevice
+          APP_BASENAME="$(basename "$APP_PATH")"   # e.g. MyDevice.app
+          APP_NAME="${APP_BASENAME%.app}"          # e.g. MyDevice
           echo "Packaging: $APP_BASENAME"
 
           rm -rf Payload
