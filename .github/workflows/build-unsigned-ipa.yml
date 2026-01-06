@@ -1,4 +1,4 @@
-name: Build Unsigned IPA (SPM)
+name: Build Unsigned IPA
 
 on:
   workflow_dispatch:
@@ -13,20 +13,53 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Xcode version
+      - name: Xcode Version
         run: xcodebuild -version
 
-      - name: Generate Xcode project from Package.swift
+      - name: Detect project + scheme
+        id: detect
+        shell: bash
         run: |
           set -euo pipefail
-          swift package generate-xcodeproj
+
+          XCODEPROJ="$(ls -1 *.xcodeproj 2>/dev/null | head -n 1 || true)"
+          if [ -z "$XCODEPROJ" ]; then
+            echo "No .xcodeproj found in repo root."
+            echo "Files here:"
+            ls -la
+            echo "Searching for .xcodeproj anywhere:"
+            find . -maxdepth 4 -name "*.xcodeproj" -print || true
+            exit 1
+          fi
+
+          echo "Using project: $XCODEPROJ"
+
+          # Get first scheme from xcodebuild -list -json
+          SCHEME="$(xcodebuild -list -json -project "$XCODEPROJ" | /usr/bin/python3 - <<'PY'
+import json,sys
+data=json.load(sys.stdin)
+schemes=data.get("project",{}).get("schemes",[]) or []
+print(schemes[0] if schemes else "")
+PY
+)"
+          if [ -z "$SCHEME" ]; then
+            echo "No schemes found. Make sure your scheme is Shared in Xcode (Manage Schemes -> Shared)."
+            xcodebuild -list -project "$XCODEPROJ"
+            exit 1
+          fi
+
+          echo "Using scheme: $SCHEME"
+
+          echo "xcodeproj=$XCODEPROJ" >> "$GITHUB_OUTPUT"
+          echo "scheme=$SCHEME" >> "$GITHUB_OUTPUT"
 
       - name: Build (iphoneos, no code signing)
+        shell: bash
         run: |
           set -euo pipefail
           xcodebuild \
-            -project MyDevice.xcodeproj \
-            -scheme MyDevice \
+            -project "${{ steps.detect.outputs.xcodeproj }}" \
+            -scheme "${{ steps.detect.outputs.scheme }}" \
             -configuration Release \
             -sdk iphoneos \
             -destination 'generic/platform=iOS' \
@@ -37,25 +70,33 @@ jobs:
             -derivedDataPath build
 
       - name: Package unsigned .ipa
+        shell: bash
         run: |
           set -euo pipefail
-          APP_PATH="build/Build/Products/Release-iphoneos/MyDevice.app"
-          if [ ! -d "$APP_PATH" ]; then
-            echo "App not found at $APP_PATH"
-            find build -maxdepth 6 -type d -name "*.app" -print
+
+          APP_PATH="$(find build/Build/Products -maxdepth 4 -type d -name "*.app" | head -n 1 || true)"
+          if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
+            echo "App not found under build/Build/Products."
+            find build -maxdepth 6 -type d -name "*.app" -print || true
             exit 1
           fi
 
+          APP_BASENAME="$(basename "$APP_PATH")"         # e.g. MyDevice.app
+          APP_NAME="${APP_BASENAME%.app}"                # e.g. MyDevice
+          echo "Packaging: $APP_BASENAME"
+
           rm -rf Payload
           mkdir -p Payload
-          cp -R "$APP_PATH" "Payload/MyDevice.app"
+          cp -R "$APP_PATH" "Payload/$APP_BASENAME"
 
-          IPA_NAME="MyDevice-unsigned.ipa"
+          IPA_NAME="${APP_NAME}-unsigned.ipa"
           rm -f "$IPA_NAME"
           /usr/bin/zip -r "$IPA_NAME" Payload
+
+          echo "IPA_NAME=$IPA_NAME" >> "$GITHUB_ENV"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: MyDevice-unsigned-ipa
-          path: MyDevice-unsigned.ipa
+          name: unsigned-ipa
+          path: ${{ env.IPA_NAME }}
