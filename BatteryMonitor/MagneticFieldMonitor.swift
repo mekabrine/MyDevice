@@ -1,87 +1,80 @@
-import Foundation
 import CoreMotion
+import Foundation
 
-/// Reads magnetic field (µT) and provides a simple baseline + delta for "metal detector"-style use.
-/// Works on real devices; simulator often returns zeros.
+@MainActor
 final class MagneticFieldMonitor: ObservableObject {
-    @Published var isAvailable = false
+    static let shared = MagneticFieldMonitor()
 
-    @Published var x: Double = 0
-    @Published var y: Double = 0
-    @Published var z: Double = 0
+    private let motion = CMMotionManager()
+    private var baselineEMA: Double = 0
+    private var baselineInitialized = false
 
-    /// Magnitude in microtesla (µT)
-    @Published var magnitude: Double = 0
+    @Published private(set) var isAvailable: Bool = false
 
-    /// Delta from baseline magnitude (µT)
-    @Published var deltaFromBaseline: Double = 0
+    @Published private(set) var x: Double = 0
+    @Published private(set) var y: Double = 0
+    @Published private(set) var z: Double = 0
+    @Published private(set) var magnitude: Double = 0
 
-    private let motion = CMMotionManager() // must be retained
-    private let queue = OperationQueue()
+    @Published private(set) var deltaFromBaseline: Double = 0
+    @Published private(set) var lastUpdate: Date?
 
-    private var baseline: Double?
-    private var baselineSamples: [Double] = []
-    private let baselineTargetCount = 40
+    private(set) var isRunning: Bool = false
 
-    func start() {
-        // Prefer calibrated field via device motion (best for UX)
-        if motion.isDeviceMotionAvailable {
-            isAvailable = true
-            motion.deviceMotionUpdateInterval = 1.0 / 20.0
+    private init() {
+        isAvailable = motion.isMagnetometerAvailable
+    }
 
-            motion.startDeviceMotionUpdates(using: .xArbitraryZVertical, to: queue) { [weak self] motionData, _ in
-                guard let self, let dm = motionData else { return }
-                let f = dm.magneticField.field // µT
-                self.update(x: f.x, y: f.y, z: f.z)
+    func start(updateHz: Double = 10) {
+        guard !isRunning else { return }
+        isAvailable = motion.isMagnetometerAvailable
+        guard isAvailable else { return }
+
+        motion.magnetometerUpdateInterval = 1.0 / max(1.0, updateHz)
+
+        // Use the magnetometer directly (raw field). Simulator often returns zeros.
+        motion.startMagnetometerUpdates(to: .main) { [weak self] data, error in
+            guard let self else { return }
+            guard error == nil, let d = data else { return }
+
+            let fx = d.magneticField.x
+            let fy = d.magneticField.y
+            let fz = d.magneticField.z
+
+            self.x = fx
+            self.y = fy
+            self.z = fz
+
+            let mag = sqrt(fx * fx + fy * fy + fz * fz)
+            self.magnitude = mag
+            self.lastUpdate = Date()
+
+            // Exponential moving average baseline (slowly adapts)
+            let alpha = 0.03
+            if !self.baselineInitialized {
+                self.baselineEMA = mag
+                self.baselineInitialized = true
+            } else {
+                self.baselineEMA = (1 - alpha) * self.baselineEMA + alpha * mag
             }
-            return
+
+            self.deltaFromBaseline = mag - self.baselineEMA
         }
 
-        // Fallback to raw magnetometer
-        if motion.isMagnetometerAvailable {
-            isAvailable = true
-            motion.magnetometerUpdateInterval = 1.0 / 20.0
-
-            motion.startMagnetometerUpdates(to: queue) { [weak self] data, _ in
-                guard let self, let m = data?.magneticField else { return }
-                self.update(x: m.x, y: m.y, z: m.z)
-            }
-            return
-        }
-
-        isAvailable = false
+        isRunning = true
     }
 
     func stop() {
-        motion.stopDeviceMotionUpdates()
+        guard isRunning else { return }
         motion.stopMagnetometerUpdates()
+        isRunning = false
     }
 
-    func resetBaseline() {
-        baseline = nil
-        baselineSamples.removeAll(keepingCapacity: true)
+    var magnitudeText: String {
+        String(format: "%.1f", magnitude)
     }
 
-    private func update(x: Double, y: Double, z: Double) {
-        let mag = sqrt(x*x + y*y + z*z)
-
-        // Build baseline from first N samples after start/reset
-        if baseline == nil {
-            baselineSamples.append(mag)
-            if baselineSamples.count >= baselineTargetCount {
-                baseline = baselineSamples.reduce(0, +) / Double(baselineSamples.count)
-            }
-        }
-
-        let base = baseline ?? mag
-        let delta = mag - base
-
-        DispatchQueue.main.async {
-            self.x = x
-            self.y = y
-            self.z = z
-            self.magnitude = mag
-            self.deltaFromBaseline = delta
-        }
+    var deltaText: String {
+        String(format: "%+.1f µT", deltaFromBaseline)
     }
 }
