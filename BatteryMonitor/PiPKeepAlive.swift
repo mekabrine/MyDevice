@@ -1,65 +1,132 @@
-import Foundation
 import AVFoundation
 import AVKit
+import UIKit
 
-/// Starts a looping video and (optionally) enters Picture-in-Picture.
-/// Note: PiP is for video playback. It does not guarantee unlimited background execution.
-final class PiPKeepAlive: NSObject {
+@MainActor
+final class PiPKeepAlive: NSObject, ObservableObject {
     static let shared = PiPKeepAlive()
 
-    private var queuePlayer: AVQueuePlayer?
-    private var looper: AVPlayerLooper?
+    @Published private(set) var isPictureInPictureActive: Bool = false
+    @Published private(set) var lastError: String?
+
+    private var player: AVPlayer?
     private var playerLayer: AVPlayerLayer?
-    private var pip: AVPictureInPictureController?
+    private var pipController: AVPictureInPictureController?
 
-    func startPiP() {
-        // Audio session is commonly required for background playback.
-        let session = AVAudioSession.sharedInstance()
-        try? session.setCategory(.playback, mode: .moviePlayback, options: [])
-        try? session.setActive(true)
+    private var hostWindow: UIWindow?
+    private var hostViewController: UIViewController?
 
-        // Add BatteryMonitor/silent.mp4 to your app target (Resources).
-        guard let url = Bundle.main.url(forResource: "silent", withExtension: "mp4") else {
-            assertionFailure("Missing silent.mp4. Add BatteryMonitor/silent.mp4 and include it in the target.")
-            return
-        }
+    private override init() {
+        super.init()
+    }
 
-        let item = AVPlayerItem(url: url)
-        let qp = AVQueuePlayer(playerItem: item)
-        let looper = AVPlayerLooper(player: qp, templateItem: item)
+    func start() {
+        lastError = nil
 
-        let layer = AVPlayerLayer(player: qp)
-        layer.videoGravity = .resizeAspect
-
-        // PiP supported?
         guard AVPictureInPictureController.isPictureInPictureSupported() else {
-            qp.play()
-            self.queuePlayer = qp
-            self.looper = looper
-            self.playerLayer = layer
+            lastError = "PiP not supported on this device."
             return
         }
 
-        let pip = AVPictureInPictureController(playerLayer: layer)
+        guard let url = Bundle.main.url(forResource: "silent", withExtension: "mp4") else {
+            lastError = "silent.mp4 not found in app bundle (make sure it’s in Copy Bundle Resources)."
+            return
+        }
 
-        self.queuePlayer = qp
-        self.looper = looper
+        // Create an off-screen window to host the player layer.
+        let windowScene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first
+
+        let window = UIWindow(windowScene: windowScene ?? UIWindowScene(session: .init(), connectionOptions: .init()))
+        window.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
+        window.isHidden = false
+        window.windowLevel = .alert + 1
+
+        let vc = UIViewController()
+        vc.view.backgroundColor = .black
+        window.rootViewController = vc
+
+        let player = AVPlayer(url: url)
+        player.actionAtItemEnd = .none
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(loopItem),
+            name: .AVPlayerItemDidPlayToEndTime,
+            object: player.currentItem
+        )
+
+        let layer = AVPlayerLayer(player: player)
+        layer.frame = vc.view.bounds
+        layer.videoGravity = .resizeAspectFill
+        vc.view.layer.addSublayer(layer)
+
+        guard let pip = AVPictureInPictureController(playerLayer: layer) else {
+            lastError = "Failed to create AVPictureInPictureController."
+            cleanup()
+            return
+        }
+
+        pip.delegate = self
+
+        // Keep references
+        self.hostWindow = window
+        self.hostViewController = vc
+        self.player = player
         self.playerLayer = layer
-        self.pip = pip
+        self.pipController = pip
 
-        qp.play()
+        player.play()
+
+        // Attempt to start PiP. (User may still need to trigger PiP depending on OS state.)
         pip.startPictureInPicture()
     }
 
-    func stopPiP() {
-        pip?.stopPictureInPicture()
-        queuePlayer?.pause()
+    func stop() {
+        pipController?.stopPictureInPicture()
+        cleanup()
+    }
 
-        queuePlayer = nil
-        looper = nil
+    @objc private func loopItem() {
+        player?.seek(to: .zero)
+        player?.play()
+    }
+
+    private func cleanup() {
+        NotificationCenter.default.removeObserver(self)
+
+        player?.pause()
+        player = nil
+
+        playerLayer?.removeFromSuperlayer()
         playerLayer = nil
-        pip = nil
 
-        try? AVAudioSession.sharedInstance().setActive(false)
+        pipController?.delegate = nil
+        pipController = nil
+
+        hostWindow?.isHidden = true
+        hostWindow = nil
+        hostViewController = nil
+
+        isPictureInPictureActive = false
+    }
+}
+
+extension PiPKeepAlive: AVPictureInPictureControllerDelegate {
+    func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        isPictureInPictureActive = true
+    }
+
+    func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
+                                    failedToStartPictureInPictureWithError error: Error) {
+        lastError = "PiP failed to start: \(error.localizedDescription)"
+        isPictureInPictureActive = false
+        cleanup()
+    }
+
+    func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
+        isPictureInPictureActive = false
+        cleanup()
     }
 }
