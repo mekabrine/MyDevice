@@ -1,5 +1,3 @@
-// BatteryMonitorApp.swift
-
 import SwiftUI
 
 @main
