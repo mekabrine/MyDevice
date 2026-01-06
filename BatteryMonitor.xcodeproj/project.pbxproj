@@ -1,5 +1,3 @@
-// project.pbxproj (updated to include: BatteryHistoryGraph.swift, MagneticFieldMonitor.swift, MetalDetectorView.swift)
-
 // !$*UTF8*$!
 {
 	archiveVersion = 1;
