@@ -20,6 +20,8 @@
 		111111111111111111111121 /* MagneticFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222233 /* MagneticFieldView.swift */; };
 		111111111111111111111122 /* PiPKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222234 /* PiPKeepAlive.swift */; };
 
+		111111111111111111111124 /* MetalDetectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222236 /* MetalDetectorView.swift */; };
+
 		111111111111111111111118 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222228 /* Assets.xcassets */; };
 		111111111111111111111123 /* silent.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222235 /* silent.mp4 */; };
 /* End PBXBuildFile section */
@@ -38,11 +40,14 @@
 		222222222222222222222233 /* MagneticFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagneticFieldView.swift; sourceTree = "<group>"; };
 		222222222222222222222234 /* PiPKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPKeepAlive.swift; sourceTree = "<group>"; };
 
+		222222222222222222222236 /* MetalDetectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalDetectorView.swift; sourceTree = "<group>"; };
+
 		222222222222222222222235 /* silent.mp4 */ = {isa = PBXFileReference; lastKnownFileType = video.mp4; path = silent.mp4; sourceTree = "<group>"; };
 
 		222222222222222222222228 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		222222222222222222222229 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		222222222222222222222230 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
+
+		222222222222222222222230 /* MyDevice.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MyDevice.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -75,6 +80,7 @@
 				222222222222222222222231 /* BatteryHistoryGraph.swift */,
 				222222222222222222222232 /* MagneticFieldMonitor.swift */,
 				222222222222222222222233 /* MagneticFieldView.swift */,
+				222222222222222222222236 /* MetalDetectorView.swift */,
 				222222222222222222222234 /* PiPKeepAlive.swift */,
 
 				222222222222222222222224 /* DeviceMonitor.swift */,
@@ -93,7 +99,7 @@
 		666666666666666666666666 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				222222222222222222222230 /* BatteryMonitor.app */,
+				222222222222222222222230 /* MyDevice.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -115,7 +121,7 @@
 			);
 			name = BatteryMonitor;
 			productName = BatteryMonitor;
-			productReference = 222222222222222222222230 /* BatteryMonitor.app */;
+			productReference = 222222222222222222222230 /* MyDevice.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -174,6 +180,7 @@
 				111111111111111111111119 /* BatteryHistoryGraph.swift in Sources */,
 				111111111111111111111120 /* MagneticFieldMonitor.swift in Sources */,
 				111111111111111111111121 /* MagneticFieldView.swift in Sources */,
+				111111111111111111111124 /* MetalDetectorView.swift in Sources */,
 				111111111111111111111122 /* PiPKeepAlive.swift in Sources */,
 
 				111111111111111111111114 /* DeviceMonitor.swift in Sources */,
@@ -229,7 +236,7 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mekabrine.BatteryMonitor;
-				PRODUCT_NAME = BatteryMonitor;
+				PRODUCT_NAME = MyDevice;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1";
 			};
@@ -252,7 +259,7 @@
 					"@executable_path/Frameworks",
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.mekabrine.BatteryMonitor;
-				PRODUCT_NAME = BatteryMonitor;
+				PRODUCT_NAME = MyDevice;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1";
