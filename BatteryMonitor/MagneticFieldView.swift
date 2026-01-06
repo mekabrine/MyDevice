@@ -1,41 +1,47 @@
 import SwiftUI
 
 struct MagneticFieldView: View {
-    @StateObject private var mag = MagneticFieldMonitor()
+    @StateObject private var magnetic = MagneticFieldMonitor.shared
 
     var body: some View {
         List {
-            Section("Magnetometer") {
-                if !mag.isAvailable {
-                    Text("Magnetometer not available on this device (or you are on the Simulator).")
-                        .foregroundStyle(.secondary)
-                }
-
-                row("X (µT)", mag.x)
-                row("Y (µT)", mag.y)
-                row("Z (µT)", mag.z)
-                row("Magnitude (µT)", mag.magnitude)
-                row("Delta from baseline (µT)", mag.deltaFromBaseline)
-
-                Button("Reset baseline") { mag.resetBaseline() }
+            Section(header: Text("Magnetic Field (µT)")) {
+                row("X", String(format: "%.1f", magnetic.x))
+                row("Y", String(format: "%.1f", magnetic.y))
+                row("Z", String(format: "%.1f", magnetic.z))
+                row("Magnitude", magnetic.magnitudeText)
+                row("Δ from baseline", magnetic.deltaText)
             }
 
-            Section("Notes") {
-                Text("For best results, calibrate by moving the phone in a figure-8, then tap Reset baseline away from metal.")
+            Section(header: Text("Notes")) {
+                Text("If you see all zeros, you’re likely on the iOS Simulator or a device where magnetometer data isn’t being produced. Test on a real iPhone.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
+
+                if let t = magnetic.lastUpdate {
+                    Text("Last update: \(t.formatted(date: .abbreviated, time: .standard))")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section(header: Text("Controls")) {
+                Button(magnetic.isRunning ? "Stop Magnetometer" : "Start Magnetometer") {
+                    magnetic.isRunning ? magnetic.stop() : magnetic.start()
+                }
             }
         }
         .navigationTitle("Magnetic Field")
-        .onAppear { mag.start() }
-        .onDisappear { mag.stop() }
+        .onAppear {
+            magnetic.start()
+        }
     }
 
-    private func row(_ title: String, _ value: Double) -> some View {
+    private func row(_ title: String, _ value: String) -> some View {
         HStack {
             Text(title)
             Spacer()
-            Text(String(format: "%.2f", value))
+            Text(value)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
         }
