@@ -6,19 +6,19 @@
   <string>$(DEVELOPMENT_LANGUAGE)</string>
 
   <key>CFBundleDisplayName</key>
-  <string>Battery Monitor</string>
+  <string>MyDevice</string>
 
   <key>CFBundleExecutable</key>
   <string>$(EXECUTABLE_NAME)</string>
 
   <key>CFBundleIdentifier</key>
-  <string>com.mekabrine.BatteryMonitor</string>
+  <string>com.mekabrine.MyDevice</string>
 
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
 
   <key>CFBundleName</key>
-  <string>$(PRODUCT_NAME)</string>
+  <string>MyDevice</string>
 
   <key>CFBundlePackageType</key>
   <string>APPL</string>
