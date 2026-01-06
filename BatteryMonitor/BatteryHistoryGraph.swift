@@ -26,7 +26,7 @@ struct BatteryHistoryGraph: View {
                         GeometryReader { _ in
                             let w = max(CGFloat(visibleChecks.count - 1) * pointSpacing, 1)
                             let h = height
-                            let pts = points(height: h)
+                            let pts = points(width: w, height: h)
 
                             Path { p in
                                 guard pts.count >= 2 else { return }
@@ -42,13 +42,11 @@ struct BatteryHistoryGraph: View {
                                     .frame(width: pointRadius * 2, height: pointRadius * 2)
                                     .position(pt)
 
-                                // anchor for scroll-to-right
                                 Color.clear
                                     .frame(width: 1, height: 1)
                                     .position(x: pt.x, y: h)
                                     .id(check.id)
                             }
-                            .frame(width: w, height: h, alignment: .topLeading)
                         }
                         .frame(width: graphWidth(), height: height)
                     }
@@ -102,7 +100,7 @@ struct BatteryHistoryGraph: View {
         max(CGFloat(max(visibleChecks.count - 1, 0)) * pointSpacing + 1, 1)
     }
 
-    private func points(height: CGFloat) -> [CGPoint] {
+    private func points(width: CGFloat, height: CGFloat) -> [CGPoint] {
         guard !visibleChecks.isEmpty else { return [] }
         return visibleChecks.enumerated().map { idx, c in
             let x = CGFloat(idx) * pointSpacing
