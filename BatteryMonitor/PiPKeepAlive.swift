@@ -2,7 +2,6 @@ import AVFoundation
 import AVKit
 import UIKit
 
-@MainActor
 final class PiPKeepAlive: NSObject, ObservableObject {
     static let shared = PiPKeepAlive()
 
@@ -20,6 +19,7 @@ final class PiPKeepAlive: NSObject, ObservableObject {
         super.init()
     }
 
+    @MainActor
     func start() {
         lastError = nil
 
@@ -29,19 +29,23 @@ final class PiPKeepAlive: NSObject, ObservableObject {
         }
 
         guard let url = Bundle.main.url(forResource: "silent", withExtension: "mp4") else {
-            lastError = "silent.mp4 not found in app bundle (make sure it’s in Copy Bundle Resources)."
+            lastError = "silent.mp4 not found in app bundle (ensure it’s in Copy Bundle Resources)."
             return
         }
 
-        // Create an off-screen window to host the player layer.
-        let windowScene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first
+        // IMPORTANT: Do not try to construct a UIWindowScene manually (UIKit marks those inits unavailable).
+        guard let windowScene = UIApplication.shared.connectedScenes
+            .compactMap({ $0 as? UIWindowScene })
+            .first else {
+            lastError = "No active UIWindowScene available."
+            return
+        }
 
-        let window = UIWindow(windowScene: windowScene ?? UIWindowScene(session: .init(), connectionOptions: .init()))
+        // Create a tiny off-screen window to host the player layer.
+        let window = UIWindow(windowScene: windowScene)
         window.frame = CGRect(x: 0, y: 0, width: 1, height: 1)
-        window.isHidden = false
         window.windowLevel = .alert + 1
+        window.isHidden = false
 
         let vc = UIViewController()
         vc.view.backgroundColor = .black
@@ -64,7 +68,7 @@ final class PiPKeepAlive: NSObject, ObservableObject {
 
         guard let pip = AVPictureInPictureController(playerLayer: layer) else {
             lastError = "Failed to create AVPictureInPictureController."
-            cleanup()
+            cleanupOnMain()
             return
         }
 
@@ -78,22 +82,26 @@ final class PiPKeepAlive: NSObject, ObservableObject {
         self.pipController = pip
 
         player.play()
-
-        // Attempt to start PiP. (User may still need to trigger PiP depending on OS state.)
         pip.startPictureInPicture()
     }
 
+    @MainActor
     func stop() {
         pipController?.stopPictureInPicture()
-        cleanup()
+        cleanupOnMain()
     }
 
     @objc private func loopItem() {
-        player?.seek(to: .zero)
-        player?.play()
+        // Called by NotificationCenter; ensure main for UI/player ops.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.player?.seek(to: .zero)
+            self.player?.play()
+        }
     }
 
-    private func cleanup() {
+    @MainActor
+    private func cleanupOnMain() {
         NotificationCenter.default.removeObserver(self)
 
         player?.pause()
@@ -113,20 +121,33 @@ final class PiPKeepAlive: NSObject, ObservableObject {
     }
 }
 
-extension PiPKeepAlive: AVPictureInPictureControllerDelegate {
+// Mark conformance as preconcurrency to avoid Swift 6 actor-isolation checking warnings,
+// and manually hop to main for state/UI updates.
+extension PiPKeepAlive: @preconcurrency AVPictureInPictureControllerDelegate {
+
     func pictureInPictureControllerDidStartPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPictureInPictureActive = true
+        DispatchQueue.main.async { [weak self] in
+            self?.isPictureInPictureActive = true
+        }
     }
 
     func pictureInPictureController(_ pictureInPictureController: AVPictureInPictureController,
                                     failedToStartPictureInPictureWithError error: Error) {
-        lastError = "PiP failed to start: \(error.localizedDescription)"
-        isPictureInPictureActive = false
-        cleanup()
+        DispatchQueue.main.async { [weak self] in
+            self?.lastError = "PiP failed to start: \(error.localizedDescription)"
+            self?.isPictureInPictureActive = false
+            Task { @MainActor in
+                self?.cleanupOnMain()
+            }
+        }
     }
 
     func pictureInPictureControllerDidStopPictureInPicture(_ pictureInPictureController: AVPictureInPictureController) {
-        isPictureInPictureActive = false
-        cleanup()
+        DispatchQueue.main.async { [weak self] in
+            self?.isPictureInPictureActive = false
+            Task { @MainActor in
+                self?.cleanupOnMain()
+            }
+        }
     }
 }
