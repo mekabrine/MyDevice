@@ -16,29 +16,39 @@ jobs:
       - name: Xcode Version
         run: xcodebuild -version
 
-      - name: Detect project + scheme
+      - name: Detect .xcodeproj + scheme
         id: detect
         shell: bash
         run: |
           set -euo pipefail
 
-          XCODEPROJ="$(ls -1 *.xcodeproj 2>/dev/null | head -n 1 || true)"
+          echo "Repo root contents:"
+          ls -la
+
+          # Find a real .xcodeproj directory (not project.pbxproj)
+          XCODEPROJ="$(find . -maxdepth 4 -type d -name "*.xcodeproj" | head -n 1 || true)"
           if [ -z "$XCODEPROJ" ]; then
-            echo "No .xcodeproj found in repo root."
-            echo "Files here:"
-            ls -la
-            echo "Searching for .xcodeproj anywhere:"
-            find . -maxdepth 4 -name "*.xcodeproj" -print || true
+            echo "ERROR: No .xcodeproj directory found (searched up to depth 4)."
+            echo "If you only committed project.pbxproj, you must commit the entire .xcodeproj folder."
+            echo "Found pbxproj files:"
+            find . -maxdepth 6 -type f -name "project.pbxproj" -print || true
             exit 1
           fi
 
           echo "Using project: $XCODEPROJ"
 
-          # Get first scheme from xcodebuild -list -json
-          SCHEME="$(xcodebuild -list -json -project "$XCODEPROJ" | python3 -c "import json,sys; d=json.load(sys.stdin); s=(d.get('project',{}).get('schemes') or []); print(s[0] if s else '')")"
+          # List schemes; if it fails, print human list and stop.
+          LIST_JSON="$(xcodebuild -list -json -project "$XCODEPROJ" 2>/dev/null || true)"
+          if [ -z "$LIST_JSON" ]; then
+            echo "ERROR: xcodebuild -list -json failed."
+            xcodebuild -list -project "$XCODEPROJ" || true
+            exit 1
+          fi
+
+          SCHEME="$(printf "%s" "$LIST_JSON" | python3 -c "import json,sys; d=json.load(sys.stdin); s=(d.get('project',{}).get('schemes') or []); print(s[0] if s else '')")"
           if [ -z "$SCHEME" ]; then
-            echo "No schemes found. Make sure your scheme is Shared in Xcode (Manage Schemes -> Shared)."
-            xcodebuild -list -project "$XCODEPROJ"
+            echo "ERROR: No schemes found. Ensure your scheme is Shared in Xcode."
+            xcodebuild -list -project "$XCODEPROJ" || true
             exit 1
           fi
 
@@ -67,10 +77,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          APP_PATH="$(find build/Build/Products -maxdepth 6 -type d -name "*.app" | head -n 1 || true)"
+          APP_PATH="$(find build/Build/Products -maxdepth 8 -type d -name "*.app" | head -n 1 || true)"
           if [ -z "$APP_PATH" ] || [ ! -d "$APP_PATH" ]; then
-            echo "App not found under build/Build/Products."
-            find build -maxdepth 8 -type d -name "*.app" -print || true
+            echo "ERROR: App not found under build/Build/Products."
+            find build -maxdepth 10 -type d -name "*.app" -print || true
             exit 1
           fi
 
