@@ -1,10 +1,10 @@
 import SwiftUI
 
 struct MetalDetectorView: View {
-    @StateObject var mag = MagneticFieldMonitor()
+    @StateObject private var mag = MagneticFieldMonitor.shared
 
-    // Tune these
-    private let alertDelta: Double = 8.0   // µT above baseline
+    // Tune this threshold (µT above baseline)
+    private let alertDelta: Double = 8.0
 
     var body: some View {
         List {
@@ -42,6 +42,7 @@ struct MetalDetectorView: View {
     private var detectorStatus: some View {
         let d = mag.deltaFromBaseline
         let status: String
+
         if mag.baseline == nil {
             status = "Calibrate first."
         } else if d > alertDelta {
