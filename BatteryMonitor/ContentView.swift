@@ -1,15 +1,13 @@
+// BatteryMonitor/ContentView.swift
 import SwiftUI
 
 struct ContentView: View {
     @ObservedObject var monitor: DeviceMonitor
+    @StateObject private var magnetic = MagneticFieldMonitor.shared
+    @StateObject private var pip = PiPKeepAlive.shared
 
-    private var showTimeToEmpty: Bool {
-        monitor.batteryState == .unplugged
-    }
-
-    private var showTimeToFull: Bool {
-        monitor.batteryState == .charging || monitor.batteryState == .full
-    }
+    private var showTimeToEmpty: Bool { monitor.batteryState == .unplugged }
+    private var showTimeToFull: Bool { monitor.batteryState == .charging || monitor.batteryState == .full }
 
     var body: some View {
         NavigationStack {
@@ -19,13 +17,15 @@ struct ContentView: View {
                     row("State", monitor.batteryStateDescription)
                     row("Low Power Mode", monitor.isLowPowerMode ? "On" : "Off")
                     row("Temperature", monitor.thermalStateDescription)
+
+                    row("iOS", "\(UIDevice.current.systemName) \(UIDevice.current.systemVersion)")
+                    row("Model", UIDevice.current.model)
                 }
 
                 Section(header: Text("Estimates")) {
                     if showTimeToEmpty {
                         estimateRow("Time to empty", monitor.timeToEmptyText)
                     }
-
                     if showTimeToFull {
                         estimateRow("Time to full", monitor.batteryState == .full ? "Full" : monitor.timeToFullText)
                     }
@@ -47,23 +47,59 @@ struct ContentView: View {
                     } else {
                         BatteryHistoryGraph(checks: monitor.checks)
                             .listRowInsets(EdgeInsets(top: 6, leading: 0, bottom: 6, trailing: 0))
-                            // Fully qualify to avoid “cannot infer contextual base”
                             .listRowSeparator(Visibility.hidden)
                     }
                 }
 
-                Section(header: Text("Monitoring")) {
+                Section(header: Text("Sensors")) {
+                    if magnetic.isAvailable {
+                        row("Magnetic (µT)", magnetic.magnitudeText)
+                        row("Δ from baseline", magnetic.deltaText)
+                        NavigationLink("Open Magnetic Field Details") {
+                            MagneticFieldView()
+                        }
+                    } else {
+                        Text("Magnetometer not available (or running on Simulator).")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                Section(header: Text("Background")) {
                     Button(monitor.isMonitoring ? "Stop Background Monitoring" : "Start Background Monitoring") {
                         monitor.isMonitoring ? monitor.stopBackgroundMonitoring() : monitor.startBackgroundMonitoring()
                     }
 
                     Button("Refresh Now") { monitor.refreshNow() }
+
+                    Divider()
+
+                    Button(pip.isPictureInPictureActive ? "Stop PiP Keep-Alive" : "Start PiP Keep-Alive") {
+                        pip.isPictureInPictureActive ? pip.stop() : pip.start()
+                    }
+
+                    if let err = pip.lastError, !err.isEmpty {
+                        Text(err)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Text("PiP can help keep the app active while the user keeps PiP running, but iOS may still suspend updates.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .padding(.vertical, 2)
                 }
             }
-            .navigationTitle("Battery Monitor")
+            .navigationTitle("Device Monitor")
         }
-        .onAppear { monitor.startBackgroundMonitoring() }
-        .onDisappear { monitor.stopBackgroundMonitoring() }
+        .onAppear {
+            monitor.startBackgroundMonitoring()
+            magnetic.start()
+        }
+        .onDisappear {
+            monitor.stopBackgroundMonitoring()
+            // leave magnetic running only if you want it globally; otherwise stop:
+            // magnetic.stop()
+        }
     }
 
     private func row(_ title: String, _ value: String) -> some View {
