@@ -1,4 +1,3 @@
-// BatteryMonitor/ContentView.swift
 import SwiftUI
 
 struct ContentView: View {
