@@ -14,10 +14,14 @@
 		111111111111111111111115 /* PiPManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222225 /* PiPManager.swift */; };
 		111111111111111111111116 /* PiPOverlayViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222226 /* PiPOverlayViewController.swift */; };
 		111111111111111111111117 /* PiPHostWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222227 /* PiPHostWindow.swift */; };
-		111111111111111111111118 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222228 /* Assets.xcassets */; };
 		111111111111111111111119 /* BatteryHistoryGraph.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222231 /* BatteryHistoryGraph.swift */; };
-		111111111111111111111120 /* MagneticFieldMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222232 /* MagneticFieldMonitor.swift */; };
-		111111111111111111111121 /* MetalDetectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222233 /* MetalDetectorView.swift */; };
+
+		111111111111111111111120 /* PiPKeepAlive.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222232 /* PiPKeepAlive.swift */; };
+		111111111111111111111121 /* MagneticFieldMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222233 /* MagneticFieldMonitor.swift */; };
+		111111111111111111111122 /* MagneticFieldView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222234 /* MagneticFieldView.swift */; };
+
+		111111111111111111111118 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222228 /* Assets.xcassets */; };
+		111111111111111111111123 /* silent.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 222222222222222222222235 /* silent.mp4 */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,12 +32,17 @@
 		222222222222222222222225 /* PiPManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPManager.swift; sourceTree = "<group>"; };
 		222222222222222222222226 /* PiPOverlayViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPOverlayViewController.swift; sourceTree = "<group>"; };
 		222222222222222222222227 /* PiPHostWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPHostWindow.swift; sourceTree = "<group>"; };
+		222222222222222222222231 /* BatteryHistoryGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryHistoryGraph.swift; sourceTree = "<group>"; };
+
+		222222222222222222222232 /* PiPKeepAlive.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PiPKeepAlive.swift; sourceTree = "<group>"; };
+		222222222222222222222233 /* MagneticFieldMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagneticFieldMonitor.swift; sourceTree = "<group>"; };
+		222222222222222222222234 /* MagneticFieldView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagneticFieldView.swift; sourceTree = "<group>"; };
+
 		222222222222222222222228 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		222222222222222222222229 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		222222222222222222222235 /* silent.mp4 */ = {isa = PBXFileReference; lastKnownFileType = file; path = silent.mp4; sourceTree = "<group>"; };
+
 		222222222222222222222230 /* BatteryMonitor.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = BatteryMonitor.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		222222222222222222222231 /* BatteryHistoryGraph.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryHistoryGraph.swift; sourceTree = "<group>"; };
-		222222222222222222222232 /* MagneticFieldMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MagneticFieldMonitor.swift; sourceTree = "<group>"; };
-		222222222222222222222233 /* MetalDetectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetalDetectorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,13 +72,17 @@
 				222222222222222222222221 /* AppDelegate.swift */,
 				222222222222222222222223 /* ContentView.swift */,
 				222222222222222222222231 /* BatteryHistoryGraph.swift */,
-				222222222222222222222232 /* MagneticFieldMonitor.swift */,
-				222222222222222222222233 /* MetalDetectorView.swift */,
 				222222222222222222222224 /* DeviceMonitor.swift */,
 				222222222222222222222225 /* PiPManager.swift */,
 				222222222222222222222226 /* PiPOverlayViewController.swift */,
 				222222222222222222222227 /* PiPHostWindow.swift */,
+
+				222222222222222222222232 /* PiPKeepAlive.swift */,
+				222222222222222222222233 /* MagneticFieldMonitor.swift */,
+				222222222222222222222234 /* MagneticFieldView.swift */,
+
 				222222222222222222222228 /* Assets.xcassets */,
+				222222222222222222222235 /* silent.mp4 */,
 				222222222222222222222229 /* Info.plist */,
 			);
 			path = BatteryMonitor;
@@ -142,6 +155,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				111111111111111111111118 /* Assets.xcassets in Resources */,
+				111111111111111111111123 /* silent.mp4 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -156,12 +170,14 @@
 				111111111111111111111112 /* AppDelegate.swift in Sources */,
 				111111111111111111111113 /* ContentView.swift in Sources */,
 				111111111111111111111119 /* BatteryHistoryGraph.swift in Sources */,
-				111111111111111111111120 /* MagneticFieldMonitor.swift in Sources */,
-				111111111111111111111121 /* MetalDetectorView.swift in Sources */,
 				111111111111111111111114 /* DeviceMonitor.swift in Sources */,
 				111111111111111111111115 /* PiPManager.swift in Sources */,
 				111111111111111111111116 /* PiPOverlayViewController.swift in Sources */,
 				111111111111111111111117 /* PiPHostWindow.swift in Sources */,
+
+				111111111111111111111120 /* PiPKeepAlive.swift in Sources */,
+				111111111111111111111121 /* MagneticFieldMonitor.swift in Sources */,
+				111111111111111111111122 /* MagneticFieldView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
